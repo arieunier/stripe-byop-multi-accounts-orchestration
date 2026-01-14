@@ -1,3 +1,16 @@
+"""
+app.py
+
+Flask entrypoint for the BYOP Orchestration demo.
+
+This file intentionally focuses on:
+- Flask routing (pages + JSON APIs)
+- Minimal webhook plumbing (signature verification + delegating to the orchestration layer)
+
+All Stripe orchestration logic (multi-account webhook scenarios) lives in `stripe_orchestration.py`.
+Small shared utilities (env lookup, StripeClient, timestamp normalization) live in `stripe_helpers.py`.
+"""
+
 import os
 import json
 import traceback
@@ -59,6 +72,10 @@ def create_app() -> Flask:
         """
         Stripe webhook endpoint for a specific account alias.
         URL: /webhook/<ALIAS> (e.g. /webhook/EU, /webhook/US)
+
+    Notes:
+    - We use the URL alias to pick the correct webhook signing secret.
+    - After verification, we delegate processing to `handle_orchestration_event(...)`.
         """
         try:
             normalized_alias = (alias or "").strip().upper()

@@ -11,3 +11,4 @@
 		import traceback
         traceback.print_exc()
 - Before implementing ANYTHING, PLAN carefully and in depth first : analyse requirements, identify best architecture approach, determine impact on current code base. Then show the user your approach (architecture, functions written or updated, ..) and then ask him to perform the operations.
+- make sure to document code written in ENGLISH

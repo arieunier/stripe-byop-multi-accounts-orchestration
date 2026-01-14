@@ -1,3 +1,14 @@
+"""
+stripe_helpers.py
+
+Small helper utilities used across the Flask app and the webhook orchestration layer.
+
+Key goals:
+- Keep Stripe configuration/env lookups in one place
+- Provide small, reusable utilities (safe field access, timestamp normalization)
+- Keep all inline comments and docstrings in ENGLISH for maintainability
+"""
+
 import os
 import time
 import traceback
@@ -7,6 +18,10 @@ import stripe
 
 
 def safe_get(obj: Any, key: str, default: Any = None) -> Any:
+    """
+    Safely read a field from either a dict-like object or a StripeObject-like object.
+    This avoids a lot of `isinstance(x, dict)` branching across the codebase.
+    """
     if obj is None:
         return default
     if isinstance(obj, dict):
@@ -18,6 +33,8 @@ def normalize_report_timestamp(ts: Any) -> int:
     """
     Stripe rejects some timestamps if they are in the future.
     If ts > now, clamp it to (now - 10 seconds).
+
+    Used for all timestamps passed to `payment_records.report_payment(...)` and `payment_records.report_refund(...)`.
     """
     now = int(time.time())
     try:
@@ -33,6 +50,10 @@ def get_account_env(alias: str) -> Tuple[str, str, str]:
     """
     Returns (account_id, secret_key, publishable_key) for an alias.
     Convention: STRIPE_ACCOUNT_<ALIAS>_*
+
+    Note:
+    - ALIAS is normalized to UPPERCASE
+    - We deliberately fail fast if something is missing, to avoid silent misrouting.
     """
     a = (alias or "").strip().upper()
     key_prefix = f"STRIPE_ACCOUNT_{a}_"
@@ -67,6 +88,8 @@ def get_alias_by_account_id(account_id: str) -> str:
     """
     Best-effort reverse lookup: given a Stripe account id (acct_...), return the configured alias.
     Looks for STRIPE_ACCOUNT_<ALIAS>_ACCOUNT_ID in the environment.
+
+    This is used when the webhook provides an account id (acct_...) and we need the corresponding secret key.
     """
     target = (account_id or "").strip()
     if not target:
@@ -82,6 +105,10 @@ def get_alias_by_account_id(account_id: str) -> str:
 
 
 def get_master_alias() -> str:
+    """
+    Master account alias: the account on which we create and maintain the "source-of-truth" objects.
+    Default: EU.
+    """
     return (os.getenv("STRIPE_MASTER_ACCOUNT_ALIAS", "EU") or "EU").strip().upper()
 
 
@@ -122,6 +149,10 @@ def stripe_client(secret_key: str) -> stripe.StripeClient:
 
 
 def debug_dump(obj: Any, enabled_env: str = "WEBHOOK_DEBUG_DUMP_EVENT") -> None:
+    """
+    Print objects only when explicitly enabled (useful for debugging webhooks without flooding logs).
+    Enable with: WEBHOOK_DEBUG_DUMP_EVENT=1
+    """
     try:
         if (os.getenv(enabled_env, "0") or "0").strip() == "1":
             print(obj)

@@ -1,3 +1,18 @@
+"""
+stripe_orchestration.py
+
+Stripe webhook orchestration logic (multi-account).
+
+This module intentionally contains the "business" part of the webhook processing, separate from Flask routing:
+- `app.py` validates the webhook signature and delegates here
+- this module decides which scenario to execute based on (alias, event.type)
+
+Conventions used by this project:
+- Master account alias is STRIPE_MASTER_ACCOUNT_ALIAS (default: EU)
+- All metadata keys written by this project are UPPERCASE (dev-mode breaking change)
+- Timestamps passed to PaymentRecord APIs are normalized to avoid future-timestamp rejections by Stripe
+"""
+
 import traceback
 from typing import Any, Dict, Optional
 
@@ -13,6 +28,7 @@ from stripe_helpers import (
 
 
 def _require(value: Any, message: str) -> Any:
+    """Fail fast if a required field is missing/empty."""
     if value is None:
         raise ValueError(message)
     if isinstance(value, str) and not value.strip():
@@ -21,6 +37,7 @@ def _require(value: Any, message: str) -> Any:
 
 
 def _get_upper(md: Any, key: str) -> Optional[str]:
+    """Read a metadata value and normalize it to a stripped string (or None)."""
     if md is None:
         return None
     if hasattr(md, "get"):
@@ -35,8 +52,10 @@ def _get_upper(md: Any, key: str) -> Optional[str]:
 
 def _extract_master_links_from_payment_intent(pi: Any) -> Dict[str, str]:
     """
-    Some flows have invoice available on the PaymentIntent; some don't (e.g. initial payment).
+    Some flows have an invoice expanded on the PaymentIntent; some don't (e.g. initial payment).
     Prefer invoice.metadata when present, otherwise fallback to payment_intent.metadata.
+
+    This is used by refund/dispute scenarios to locate the corresponding master objects.
     """
     pi_md = safe_get(pi, "metadata") or {}
     inv = safe_get(pi, "invoice")
@@ -52,6 +71,7 @@ def _extract_master_links_from_payment_intent(pi: Any) -> Dict[str, str]:
 
 
 def _get_master_payment_record_id(master_client, master_invoice_id: str) -> str:
+    """Retrieve the master invoice and return metadata.MASTER_ACCOUNT_PAYMENT_RECORD_ID."""
     inv = master_client.v1.invoices.retrieve(str(master_invoice_id))
     md = safe_get(inv, "metadata") or {}
     rid = _get_upper(md, "MASTER_ACCOUNT_PAYMENT_RECORD_ID")
@@ -59,12 +79,14 @@ def _get_master_payment_record_id(master_client, master_invoice_id: str) -> str:
 
 
 def _update_master_invoice_payment_record_id(master_client, master_invoice_id: str, payment_record_id: str) -> None:
+    """Persist metadata.MASTER_ACCOUNT_PAYMENT_RECORD_ID on the master invoice."""
     master_client.v1.invoices.update(
         str(master_invoice_id), {"metadata": {"MASTER_ACCOUNT_PAYMENT_RECORD_ID": str(payment_record_id)}}
     )
 
 
 def _get_first_master_invoice_line_item_id(master_client, master_invoice_id: str) -> str:
+    """Return the first invoice line item id on a master invoice (used for credit notes)."""
     inv = master_client.v1.invoices.retrieve(str(master_invoice_id))
     lines = inv["lines"]["data"] if isinstance(inv, dict) else safe_get(safe_get(inv, "lines"), "data")
     if not isinstance(lines, list) or not lines:
@@ -73,6 +95,7 @@ def _get_first_master_invoice_line_item_id(master_client, master_invoice_id: str
 
 
 def _create_master_credit_note(master_client, master_invoice_id: str, amount: int, metadata: Dict[str, str]) -> None:
+    """Create an out-of-band credit note on the master invoice."""
     invoice_line_item = _get_first_master_invoice_line_item_id(master_client, master_invoice_id)
     master_client.v1.credit_notes.create(
         {
@@ -207,6 +230,7 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
             str(PROCESSING_ACCOUNT_CUSTOMER_ID),
             {"type": "custom"},
         )
+        # Optional debug: can be verbose, keep it during dev iterations.
         print(f"payment_methods: {payment_methods}")
         pm_data = safe_get(payment_methods, "data") or []
         updated = 0
@@ -214,6 +238,7 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
             pm_id = safe_get(pm, "id")
             if not pm_id:
                 continue
+            # Keep master custom PM aligned with the new processing default payment method.
             master_client.v1.payment_methods.update(
                 str(pm_id),
                 {"metadata": {"PROCESSING_ACCOUNT_PAYMENT_METHOD_ID": str(PROCESSING_ACCOUNT_PAYMENT_METHOD_ID)}},
