@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Create Customer - Stripe Multi-Account Demo</title>
+    <link rel="stylesheet" href="/static/css/theme.css" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+    <script src="https://js.stripe.com/v3/"></script>
+  </head>
+  <body>
+    <div class="container" id="app">
+      <!-- topbar injected -->
+      <div class="grid">
+        <div class="card">
+          <h2 class="card-title">Create customer</h2>
+          <p class="card-desc">
+            This will create a Stripe Customer on the account linked to your selected price. Address is collected with
+            Stripe Address Element.
+          </p>
+          <div class="divider"></div>
+
+          <form id="customerForm">
+            <div class="row">
+              <div class="field" style="flex: 1; min-width: 220px">
+                <div class="label">First name</div>
+                <input class="input" id="firstName" autocomplete="given-name" required />
+              </div>
+              <div class="field" style="flex: 1; min-width: 220px">
+                <div class="label">Last name</div>
+                <input class="input" id="lastName" autocomplete="family-name" required />
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="label">Email</div>
+              <input class="input" id="email" type="email" autocomplete="email" required />
+            </div>
+
+            <div class="field">
+              <div class="label">Address</div>
+              <div class="stripe-box" id="addressElement"></div>
+              <div class="hint">Powered by Stripe Address Element</div>
+            </div>
+
+            <div class="row" style="margin-top: 14px">
+              <button class="btn btn-primary" type="submit" id="submitBtn">Create Customer & Subscription</button>
+              <a class="btn" href="/">Back</a>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">Selection</h2>
+          <p class="card-desc">
+            Customers and subscriptions are created on the master account. The selected price determines the Processing Account metadata.
+          </p>
+          <div class="divider"></div>
+          <div id="selectionBlock"></div>
+          <div class="divider"></div>
+          <div id="resultBlock"></div>
+        </div>
+
+        <div class="card grid-full center-card" id="paymentCard" style="display: none">
+          <h2 class="card-title">Payment</h2>
+          <p class="card-desc">Complete the payment for the latest invoice PaymentIntent. If processing != master then creates a new PaymentIntent on the processing account.</p>
+          <div class="divider"></div>
+          <div id="paymentBlock"></div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/static/js/pages/create-customer.js"></script>
+  </body>
+</html>
+
+

@@ -1,0 +1,29 @@
+{
+  "product": {
+    "id": "demo_product_001",
+    "name": "Demo Subscription",
+    "description": "Subscription demo for multi-account Stripe orchestration."
+  },
+  "prices": [
+    {
+      "id": "price_1Smak3Rgx6wGxRDuoNGPnYLN",
+      "amount_cents": 990,
+      "currency": "eur",
+      "account_alias": "EU"
+    },
+    {
+      "id": "price_1SmdgIRgx6wGxRDuABteuWoX",
+      "amount_cents": 1190,
+      "currency": "usd",
+      "account_alias": "US"
+    },
+    {
+      "id": "price_1Sni0nRgx6wGxRDubY1HQ4wI",
+      "amount_cents": 1000,
+      "currency": "gbp",
+      "account_alias": "GB"
+    }
+  ]
+}
+
+

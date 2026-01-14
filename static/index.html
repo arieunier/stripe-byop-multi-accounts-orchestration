@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stripe Multi-Account Demo</title>
+    <link rel="stylesheet" href="/static/css/theme.css" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body>
+    <div class="container" id="app">
+      <!-- topbar injected -->
+      <div class="grid">
+        <div class="card">
+          <h2 class="card-title">Product</h2>
+          <p class="card-desc">
+            Choose a currency to continue. Customers and subscriptions are created on the master account. The selected
+            currency determines the processing account used for orchestration and (optionally) payment.
+          </p>
+          <div class="divider"></div>
+          <div id="productBlock"></div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">What happens next?</h2>
+          <p class="card-desc">
+            You'll be taken to the customer form. The address is collected using Stripe Address Element, then the backend
+            creates a Stripe Customer on the correct account and sets metadata <span class="mono">Processing_Account</span>.
+          </p>
+          <div class="divider"></div>
+          <div class="row">
+            <span class="tag">No local DB</span>
+            <span class="tag">Keys from .env</span>
+            <span class="tag">2 Stripe accounts</span>
+          </div>
+          <div class="divider"></div>
+          <div class="row">
+            <a class="btn" href="/update-custom-payment-method">Update payment method metadata</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/static/js/pages/index.js"></script>
+  </body>
+</html>
+
+
