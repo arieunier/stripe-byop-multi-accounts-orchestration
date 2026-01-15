@@ -80,6 +80,10 @@ python app.py
 Open:
 - `http://127.0.0.1:5000/`
 
+### Documentation
+- [`webhooks.md`](webhooks.md): detailed description of the webhook orchestration scenarios (master vs processing, triggers, actions).
+- [`metadata.md`](metadata.md): exhaustive list of all Stripe metadata keys written by this project, per Stripe object.
+
 ### Useful endpoints
 - `GET /api/catalog`
 - `GET /api/stripe/publishable-key?price_id=...`
