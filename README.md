@@ -12,21 +12,34 @@ This is a **demo** app (Flask + HTML/CSS/JS) that simulates **multi-account Stri
 - Multiple Stripe accounts (multiple API key sets) + price IDs
 
 ### Configuration
-- **1) Create your `.env` from the example**
+- **1) Create your `.env` from the example (admin password only)**
 
 ```bash
 cp stripe.env.example .env
 ```
 
-- **2) Fill in Stripe keys per alias in `.env`**
-For each alias (e.g. `EU`, `US`, `GB`), define:
-- `STRIPE_ACCOUNT_<ALIAS>_ACCOUNT_ID`
-- `STRIPE_ACCOUNT_<ALIAS>_SECRET_KEY`
-- `STRIPE_ACCOUNT_<ALIAS>_PUBLISHABLE_KEY`
-- optional UI hint: `STRIPE_ACCOUNT_<ALIAS>_COUNTRY` (ISO2, e.g. `FR`, `US`, `GB`)
+- **2) Configure Stripe accounts + webhooks + CPM in `config/runtime-config.json` (or via `/config`)**
+Runtime Stripe configuration is **JSON-backed** (no restart needed):
+- `config/runtime-config.json`
 
-Also define the master account alias (resource creation account):
-- `STRIPE_MASTER_ACCOUNT_ALIAS` (default: `EU`)
+You can edit it either:
+- manually (JSON file), or
+- from the admin UI `GET /config` (recommended)
+
+### Live configuration UI (`/config`)
+This project includes an admin configuration UI that lets you edit **accounts/secrets/webhooks/CPM** and the **product catalog** without restarting the app.
+
+- URL: `GET /config`
+- Auth: HTTP Basic Auth (browser prompt)
+- Credentials:
+  - `ADMIN_PASSWORD` (set in `.env`)
+  - `ADMIN_USERNAME` (optional, defaults to `admin`)
+
+The runtime configuration is stored in:
+- `config/runtime-config.json`
+
+The product catalog is stored in:
+- `config/catalog.json`
 
 - **3) Update your Price IDs in `config/catalog.json`**
 Replace placeholders / set your real `price_...` IDs and `account_alias` mappings.
@@ -49,10 +62,7 @@ This file drives the whole flow:
 
 #### What to change
 - Replace placeholder `price_...` IDs with real ones from your Stripe dashboard
-- Ensure every `prices[].account_alias` matches an alias configured in `.env`:
-  - `STRIPE_ACCOUNT_<ALIAS>_ACCOUNT_ID`
-  - `STRIPE_ACCOUNT_<ALIAS>_SECRET_KEY`
-  - `STRIPE_ACCOUNT_<ALIAS>_PUBLISHABLE_KEY`
+- Ensure every `prices[].account_alias` matches an alias configured in `config/runtime-config.json` under `accounts`.
 
 If an alias is missing, the backend will return an error when resolving keys for that price.
 
@@ -84,6 +94,13 @@ Open:
 - [`webhooks.md`](webhooks.md): detailed description of the webhook orchestration scenarios (master vs processing, triggers, actions).
 - [`metadata.md`](metadata.md): exhaustive list of all Stripe metadata keys written by this project, per Stripe object.
 
+### Webhook monitoring (real-time)
+This project includes a real-time webhook monitoring page (no persistence):
+- UI: `GET /webhook-monitoring`
+- SSE stream: `GET /api/monitor/webhooks/stream`
+
+Events are streamed to connected browsers only. Refreshing/leaving the page clears the UI history.
+
 ### Useful endpoints
 - `GET /api/catalog`
 - `GET /api/stripe/publishable-key?price_id=...`
@@ -92,5 +109,7 @@ Open:
 - `POST /api/processing-payment-intents`
 - `GET /api/payment-methods/<pm_id>`
 - `POST /api/payment-methods/update-processing-metadata`
+- `POST /webhook/<ALIAS>`
+- `GET /webhook-monitoring`
 
 

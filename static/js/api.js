@@ -24,4 +24,19 @@ export async function apiPost(path, payload) {
   return data;
 }
 
+export async function apiPut(path, payload) {
+  const res = await fetch(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data?.error || `Request failed (${res.status})`;
+    const detail = data?.detail ? ` - ${data.detail}` : "";
+    throw new Error(`${msg}${detail}`);
+  }
+  return data;
+}
+
 

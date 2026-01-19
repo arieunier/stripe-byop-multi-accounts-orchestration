@@ -1,0 +1,31 @@
+{
+  "master_account_alias": "EU",
+  "accounts": {
+    "EU": {
+      "account_id": "acct_1Sma9QRgx6wGxRDu",
+      "secret_key": "sk_test_51Sma9QRgx6wGxRDuFme9p1Uaaeaxk4vqz5CvR0lKAFzWvE8LrXqGHLGwCzqFo9JxNUHjHzsC7kMHqraguIdGrTqw00ZZ0HMqMn",
+      "publishable_key": "pk_test_51Sma9QRgx6wGxRDuYlPR9e1w00qO0pmTgcngyTelwFaq0gdeiN6zrQqzlRBLMgFk92UMY4eA1F3KHbu9HlLdmHmy00Z04CQkEW",
+      "webhook_signing_secret": "whsec_bca72bc25fcd19c3307ab17de0ec50ef2d49c2c11332307e8f9619c4f5123931",
+      "country": "FR"
+    },
+    "US": {
+      "account_id": "acct_1Sma9NPm0A0XhmmQ",
+      "secret_key": "sk_test_51Sma9NPm0A0XhmmQtJCZIOuuSGt3WFgH6oQvjcH83AQneCjr8qROpRXSB3ZyISqtMeFbiiudOSUpwIycwxCsYNEN00Osy71uFT",
+      "publishable_key": "pk_test_51Sma9NPm0A0XhmmQqfZHIpTiDQDMlgkxPxJpwhUpAUQxJz4DBgA1ixFyqsdDSs5WMTqjW693PMKfmcLHsRiKy0UM00Ix9eMk9N",
+      "webhook_signing_secret": "whsec_d7ba85d01d62765e06ecf53401b03f9487ad0947fe5f9af39c062537de8cefe9",
+      "country": "US"
+    },
+    "GB": {
+      "account_id": "acct_1SnhsTHRmEz6k6lB",
+      "secret_key": "sk_test_51SniCxD2jFSk2Vdjwj0FPpAflQurTrPQN7do7gYfLnkSozqqK62mA1hOe7c0KibULSS4lBq6Gl6u0ibGSCmn7HFj00w2yC5TeP",
+      "publishable_key": "pk_test_51SniCxD2jFSk2VdjQKZxT7Z5PBDEQBSWXvCB8nGqk2stv4y41NLzPbl1WXyCITlk2OMctIfbCKzojV3fn6bnQdjd00CWkD1CdV",
+      "webhook_signing_secret": "whsec_f4efbd79ff3b308ac5dedc0c35702c8200fbe91b2bddf1ee4c3957c7b4fab189",
+      "country": "GB"
+    }
+  },
+  "master_custom_payment_methods": {
+    "EU": "cpmt_1SmacuRgx6wGxRDuLTDqh7C1",
+    "US": "cpmt_1SmacuRgx6wGxRDuLTDqh7C1",
+    "GB": "cpmt_1Snhx6Rgx6wGxRDuH99NZhdb"
+  }
+}

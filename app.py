@@ -15,9 +15,10 @@ import os
 import json
 import traceback
 import time
+import queue
 from typing import Any, Dict, Optional
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 from dotenv import load_dotenv
 
 import stripe
@@ -31,12 +32,17 @@ from stripe_helpers import (
     stripe_client,
 )
 from stripe_orchestration import handle_orchestration_event
+from auth import requires_basic_auth
+from config_store import load_runtime_config, save_runtime_config, load_catalog, save_catalog
+from webhook_monitor import WebhookEventHub
 
 
 def create_app() -> Flask:
     load_dotenv()
 
     app = Flask(__name__, static_folder="static", static_url_path="/static")
+    webhook_hub = WebhookEventHub()
+
     @app.get("/")
     def index_page():
         return send_from_directory(app.static_folder, "index.html")
@@ -53,13 +59,54 @@ def create_app() -> Flask:
     def update_custom_payment_method_page():
         return send_from_directory(app.static_folder, "update-custom-payment-method.html")
 
+    @app.get("/config")
+    @requires_basic_auth
+    def config_page():
+        return send_from_directory(app.static_folder, "config.html")
+
+    @app.get("/webhook-monitoring")
+    def webhook_monitoring_page():
+        return send_from_directory(app.static_folder, "webhook-monitoring.html")
+
+    @app.get("/api/monitor/webhooks/stream")
+    def api_webhook_stream():
+        """
+        Server-Sent Events stream for webhook monitoring.
+
+        No persistence: events are only sent to currently connected clients.
+        """
+
+        client_q: queue.Queue[str] = webhook_hub.subscribe(max_queue_size=200)
+
+        @stream_with_context
+        def generate():
+            try:
+                # Initial hello to confirm connection and allow the UI to flip to "connected".
+                yield "event: hello\ndata: {}\n\n"
+                while True:
+                    try:
+                        msg = client_q.get(timeout=15)
+                        yield f"event: webhook\ndata: {msg}\n\n"
+                    except Exception:
+                        # Keep-alive comment to prevent idle timeouts in some proxies.
+                        yield ": keepalive\n\n"
+            finally:
+                webhook_hub.unsubscribe(client_q)
+
+        headers = {
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+        return Response(generate(), headers=headers, mimetype="text/event-stream")
+
     @app.get("/api/health")
     def health():
         return jsonify({"status": "ok"})
 
-    def load_catalog() -> Dict[str, Any]:
-        with open(os.path.join(os.path.dirname(__file__), "config", "catalog.json"), "r", encoding="utf-8") as f:
-            return json.load(f)
+    # Catalog is file-backed and can be edited live from /config.
+    def load_catalog_local() -> Dict[str, Any]:
+        return load_catalog()
 
     def get_price_by_id(catalog: Dict[str, Any], price_id: str) -> Optional[Dict[str, Any]]:
         for p in catalog.get("prices", []):
@@ -101,11 +148,23 @@ def create_app() -> Flask:
                 event_type = event.get("type")
             # Use alias to resolve the expected Stripe account id from env (more reliable than event.account).
             resolved_account_id, _resolved_secret_key, _resolved_publishable_key = get_account_env(normalized_alias)
+            resolved_country = get_account_country(normalized_alias)
 
             # Keep the raw event "account" as optional debug signal (may be missing depending on event source).
             event_account_id = getattr(event, "account", None)
             if event_account_id is None and isinstance(event, dict):
                 event_account_id = event.get("account")
+
+            # Broadcast monitoring event (best-effort, in-memory only).
+            webhook_hub.publish(
+                {
+                    "received_at": int(time.time()),
+                    "alias": normalized_alias,
+                    "account_id": resolved_account_id,
+                    "country": resolved_country,
+                    "type": event_type,
+                }
+            )
 
             # Delegate orchestration logic (scenarios 1-6)
             handle_orchestration_event(normalized_alias, event, resolved_account_id)
@@ -122,11 +181,59 @@ def create_app() -> Flask:
     @app.get("/api/catalog")
     def api_catalog():
         try:
-            catalog = load_catalog()
+            catalog = load_catalog_local()
             return jsonify(catalog)
         except Exception as e:
             traceback.print_exc()
             return jsonify({"error": "Failed to load catalog", "detail": str(e)}), 500
+
+    @app.put("/api/catalog")
+    @requires_basic_auth
+    def api_update_catalog():
+        """
+        Update the product catalog (config/catalog.json).
+        Protected by Basic Auth because it mutates server-side configuration.
+        """
+        try:
+            payload = request.get_json(silent=True) or {}
+            if not isinstance(payload, dict):
+                return jsonify({"error": "Invalid payload: expected JSON object"}), 400
+            save_catalog(payload)
+            return jsonify({"status": "ok"})
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"error": "Failed to update catalog", "detail": str(e)}), 500
+
+    @app.get("/api/config")
+    @requires_basic_auth
+    def api_get_config():
+        """
+        Return runtime config from config/runtime-config.json.
+        Protected by Basic Auth because it contains sensitive fields.
+        """
+        try:
+            cfg = load_runtime_config()
+            return jsonify(cfg)
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"error": "Failed to load config", "detail": str(e)}), 500
+
+    @app.put("/api/config")
+    @requires_basic_auth
+    def api_update_config():
+        """
+        Update runtime config (config/runtime-config.json).
+        Protected by Basic Auth because it contains secrets (Stripe keys / webhook signing secrets).
+        """
+        try:
+            payload = request.get_json(silent=True) or {}
+            if not isinstance(payload, dict):
+                return jsonify({"error": "Invalid payload: expected JSON object"}), 400
+            save_runtime_config(payload)
+            return jsonify({"status": "ok"})
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"error": "Failed to update config", "detail": str(e)}), 500
 
     @app.get("/api/stripe/publishable-key")
     def api_publishable_key():
@@ -135,7 +242,8 @@ def create_app() -> Flask:
             if not price_id:
                 return jsonify({"error": "Missing required query param: price_id"}), 400
 
-            catalog = load_catalog()
+            catalog = load_catalog_local()
+            # NOTE: catalog is file-backed (config/catalog.json) and can be edited live from /config.
             price = get_price_by_id(catalog, price_id)
             if not price:
                 return jsonify({"error": "Unknown price_id"}), 404
@@ -201,7 +309,7 @@ def create_app() -> Flask:
             if not email:
                 return jsonify({"error": "Missing required field: email"}), 400
 
-            catalog = load_catalog()
+            catalog = load_catalog_local()
             price = get_price_by_id(catalog, price_id)
             if not price:
                 return jsonify({"error": "Unknown price_id"}), 404
@@ -268,7 +376,7 @@ def create_app() -> Flask:
             if not stripe_customer_id:
                 return jsonify({"error": "Missing required field: stripe_customer_id"}), 400
 
-            catalog = load_catalog()
+            catalog = load_catalog_local()
             price = get_price_by_id(catalog, price_id)
             if not price:
                 return jsonify({"error": "Unknown price_id"}), 404
@@ -410,7 +518,7 @@ def create_app() -> Flask:
             if not original_subscription_id:
                 return jsonify({"error": "Missing required field: original_subscription_id"}), 400
 
-            catalog = load_catalog()
+            catalog = load_catalog_local()
             price = get_price_by_id(catalog, price_id)
             if not price:
                 return jsonify({"error": "Unknown price_id"}), 404

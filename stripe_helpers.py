@@ -15,6 +15,7 @@ import traceback
 from typing import Any, Dict, Optional, Tuple
 
 import stripe
+from config_store import load_runtime_config
 
 
 def safe_get(obj: Any, key: str, default: Any = None) -> Any:
@@ -56,10 +57,20 @@ def get_account_env(alias: str) -> Tuple[str, str, str]:
     - We deliberately fail fast if something is missing, to avoid silent misrouting.
     """
     a = (alias or "").strip().upper()
-    key_prefix = f"STRIPE_ACCOUNT_{a}_"
-    account_id = (os.getenv(f"{key_prefix}ACCOUNT_ID", "") or "").strip()
-    secret_key = (os.getenv(f"{key_prefix}SECRET_KEY", "") or "").strip()
-    publishable_key = (os.getenv(f"{key_prefix}PUBLISHABLE_KEY", "") or "").strip()
+    cfg = load_runtime_config()
+    accounts = cfg.get("accounts") if isinstance(cfg, dict) else None
+    entry = (accounts or {}).get(a) if isinstance(accounts, dict) else None
+
+    # Prefer runtime-config.json; fallback to env for backward compatibility
+    account_id = (entry.get("account_id") if isinstance(entry, dict) else None) or ""
+    secret_key = (entry.get("secret_key") if isinstance(entry, dict) else None) or ""
+    publishable_key = (entry.get("publishable_key") if isinstance(entry, dict) else None) or ""
+
+    if not account_id or not secret_key or not publishable_key:
+        key_prefix = f"STRIPE_ACCOUNT_{a}_"
+        account_id = account_id or (os.getenv(f"{key_prefix}ACCOUNT_ID", "") or "").strip()
+        secret_key = secret_key or (os.getenv(f"{key_prefix}SECRET_KEY", "") or "").strip()
+        publishable_key = publishable_key or (os.getenv(f"{key_prefix}PUBLISHABLE_KEY", "") or "").strip()
 
     missing = []
     if not account_id:
@@ -79,9 +90,14 @@ def get_account_country(alias: str) -> Optional[str]:
     Convention: STRIPE_ACCOUNT_<ALIAS>_COUNTRY (e.g. FR, US)
     """
     a = (alias or "").strip().upper()
-    key = f"STRIPE_ACCOUNT_{a}_COUNTRY"
-    v = (os.getenv(key, "") or "").strip().upper()
-    return v or None
+    cfg = load_runtime_config()
+    accounts = cfg.get("accounts") if isinstance(cfg, dict) else None
+    entry = (accounts or {}).get(a) if isinstance(accounts, dict) else None
+    v = (entry.get("country") if isinstance(entry, dict) else None) or ""
+    if not v:
+        key = f"STRIPE_ACCOUNT_{a}_COUNTRY"
+        v = (os.getenv(key, "") or "").strip().upper()
+    return (str(v).strip().upper() or None) if v is not None else None
 
 
 def get_alias_by_account_id(account_id: str) -> str:
@@ -94,14 +110,25 @@ def get_alias_by_account_id(account_id: str) -> str:
     target = (account_id or "").strip()
     if not target:
         raise ValueError("Missing account_id for alias lookup")
+
+    cfg = load_runtime_config()
+    accounts = cfg.get("accounts") if isinstance(cfg, dict) else None
+    if isinstance(accounts, dict):
+        for alias, entry in accounts.items():
+            if not isinstance(entry, dict):
+                continue
+            if (entry.get("account_id") or "").strip() == target:
+                return (alias or "").strip().upper()
+
+    # Fallback: env scan (backward compatible)
     for k, v in os.environ.items():
         if not k.startswith("STRIPE_ACCOUNT_") or not k.endswith("_ACCOUNT_ID"):
             continue
         if (v or "").strip() == target:
-            # STRIPE_ACCOUNT_<ALIAS>_ACCOUNT_ID
             mid = k[len("STRIPE_ACCOUNT_") : -len("_ACCOUNT_ID")]
             return (mid or "").strip().upper()
-    raise ValueError(f"Unable to resolve alias for account_id={target} (missing STRIPE_ACCOUNT_<ALIAS>_ACCOUNT_ID?)")
+
+    raise ValueError(f"Unable to resolve alias for account_id={target} (missing runtime-config.json or STRIPE_ACCOUNT_<ALIAS>_ACCOUNT_ID?)")
 
 
 def get_master_alias() -> str:
@@ -109,7 +136,11 @@ def get_master_alias() -> str:
     Master account alias: the account on which we create and maintain the "source-of-truth" objects.
     Default: EU.
     """
-    return (os.getenv("STRIPE_MASTER_ACCOUNT_ALIAS", "EU") or "EU").strip().upper()
+    cfg = load_runtime_config()
+    v = (cfg.get("master_account_alias") if isinstance(cfg, dict) else None) or ""
+    if not v:
+        v = (os.getenv("STRIPE_MASTER_ACCOUNT_ALIAS", "EU") or "EU").strip()
+    return str(v).strip().upper() or "EU"
 
 
 def get_webhook_signing_secret(alias: str) -> str:
@@ -120,11 +151,18 @@ def get_webhook_signing_secret(alias: str) -> str:
     a = (alias or "").strip().upper()
     if not a:
         raise ValueError("Missing webhook alias")
-    key = f"STRIPE_ACCOUNT_{a}_WEBHOOK_SIGNING_SECRET"
-    secret = (os.getenv(key, "") or "").strip()
+
+    cfg = load_runtime_config()
+    accounts = cfg.get("accounts") if isinstance(cfg, dict) else None
+    entry = (accounts or {}).get(a) if isinstance(accounts, dict) else None
+    secret = (entry.get("webhook_signing_secret") if isinstance(entry, dict) else None) or ""
+
     if not secret:
-        raise ValueError(f"Missing environment variable: {key}")
-    return secret
+        key = f"STRIPE_ACCOUNT_{a}_WEBHOOK_SIGNING_SECRET"
+        secret = (os.getenv(key, "") or "").strip()
+    if not secret:
+        raise ValueError(f"Missing webhook signing secret for alias={a} (runtime-config.json or {key})")
+    return str(secret).strip()
 
 
 def get_master_custom_payment_method_type(processing_alias: str) -> str:
@@ -136,11 +174,16 @@ def get_master_custom_payment_method_type(processing_alias: str) -> str:
     a = (processing_alias or "").strip().upper()
     if not a:
         raise ValueError("Missing processing alias for CPM lookup")
-    key = f"STRIPE_MASTER_ACCOUNT_{a}_CPM"
-    cpm = (os.getenv(key, "") or "").strip()
+
+    cfg = load_runtime_config()
+    mpms = cfg.get("master_custom_payment_methods") if isinstance(cfg, dict) else None
+    cpm = (mpms.get(a) if isinstance(mpms, dict) else None) or ""
     if not cpm:
-        raise ValueError(f"Missing environment variable: {key}")
-    return cpm
+        key = f"STRIPE_MASTER_ACCOUNT_{a}_CPM"
+        cpm = (os.getenv(key, "") or "").strip()
+    if not cpm:
+        raise ValueError(f"Missing master CPM type for alias={a}")
+    return str(cpm).strip()
 
 
 def stripe_client(secret_key: str) -> stripe.StripeClient:

@@ -1,6 +1,6 @@
 # Stripe Metadata Map (all keys written by this project)
 
-This document lists **all Stripe `metadata` keys written by this codebase** (current implementation in `app.py`).
+This document lists **all Stripe `metadata` keys written by this codebase** (current implementation split across `app.py` APIs and `stripe_orchestration.py` webhook scenarios).
 
 ## Global rules
 

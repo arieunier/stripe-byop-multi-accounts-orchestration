@@ -1,12 +1,11 @@
 # Stripe Webhooks — Multi-account Orchestration (7 scenarios)
 
-This document describes the **7 orchestration scenarios** implemented in `app.py`, through the endpoint:
+This document describes the **7 orchestration scenarios** implemented in `stripe_orchestration.py`, through the endpoint:
 
 - `POST /webhook/<ALIAS>` (e.g. `/webhook/EU`, `/webhook/US`)
 
-Each webhook is received **on an account identified by the alias** (derived from the URL), and its signature is verified using:
-
-- `STRIPE_ACCOUNT_<ALIAS>_WEBHOOK_SIGNING_SECRET`
+Each webhook is received **on an account identified by the alias** (derived from the URL), and its signature is verified using the alias configuration stored in:
+- `config/runtime-config.json` (`accounts[ALIAS].webhook_signing_secret`)
 
 ## Key conventions
 
@@ -21,16 +20,20 @@ Each webhook is received **on an account identified by the alias** (derived from
   - To prevent Stripe from rejecting timestamps that are **in the future**, timestamps used in `payment_records.*` are normalized:
     - if \(ts > now\) ⇒ we use `now - 10s`
 
-## Required environment variables (reminder)
+## Required runtime configuration (reminder)
 
-- Per account (alias):
-  - `STRIPE_ACCOUNT_<ALIAS>_ACCOUNT_ID`
-  - `STRIPE_ACCOUNT_<ALIAS>_SECRET_KEY`
-  - `STRIPE_ACCOUNT_<ALIAS>_PUBLISHABLE_KEY`
-  - `STRIPE_ACCOUNT_<ALIAS>_WEBHOOK_SIGNING_SECRET`
+Stored in `config/runtime-config.json` (editable live from `GET /config`):
 
-- For the master custom payment method (per processing alias):
-  - `STRIPE_MASTER_ACCOUNT_<ALIAS_PROCESSING>_CPM`
+- **Master alias**:
+  - `master_account_alias`
+- **Per account (by alias)**:
+  - `accounts[ALIAS].account_id`
+  - `accounts[ALIAS].secret_key`
+  - `accounts[ALIAS].publishable_key`
+  - `accounts[ALIAS].webhook_signing_secret`
+  - optional UI hint: `accounts[ALIAS].country` (ISO2, e.g. `FR`, `US`, `GB`)
+- **CPM mapping** (per processing alias):
+  - `master_custom_payment_methods[ALIAS] = "cpmt_..."`
 
 ---
 
