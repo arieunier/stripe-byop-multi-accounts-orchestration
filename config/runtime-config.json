@@ -21,19 +21,11 @@
       "publishable_key": "pk_test_51SniCxD2jFSk2VdjQKZxT7Z5PBDEQBSWXvCB8nGqk2stv4y41NLzPbl1WXyCITlk2OMctIfbCKzojV3fn6bnQdjd00CWkD1CdV",
       "webhook_signing_secret": "whsec_ZOkacG4f3hS44OF9sk7idHdBFOCq4x5O",
       "country": "GB"
-    },
-    "BR": {
-        "account_id": "acct_1SrMI1RmGS5inGMy",
-        "secret_key": "sk_test_51SrMI1RmGS5inGMyzulbWXC9rmhublNHM519uLxGJOHzLCwzQ02jGUWxYT6b2GUz8dVJu1m21BrjUdwYln7KJHJN00gnyzYcbq",
-        "publishable_key": "pk_test_51SrMI1RmGS5inGMy4Md7RiFqVCDPcMNIwGzkr5xCxxrOGqTv1fhHv3hhSodscTkKYGUEaBX76nH1assIasjb2FAX0046xITLO7",
-        "webhook_signing_secret": "whsec_lRnegOr5S2bojPjI6Wh4QJAypuLazY2C",
-        "country": "BR"
-      }
+    }
   },
   "master_custom_payment_methods": {
     "EU": "cpmt_1SmacuRgx6wGxRDuLTDqh7C1",
     "US": "cpmt_1SmacuRgx6wGxRDuLTDqh7C1",
-    "GB": "cpmt_1Snhx6Rgx6wGxRDuH99NZhdb",
-    "BR": "cpmt_1SrMNQRgx6wGxRDukFBeaGDZ"
+    "GB": "cpmt_1Snhx6Rgx6wGxRDuH99NZhdb"
   }
 }
