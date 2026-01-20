@@ -139,6 +139,7 @@ def create_app() -> Flask:
             try:
                 event = stripe.Webhook.construct_event(payload=payload, sig_header=sig_header, secret=signing_secret)
             except Exception as e:
+                import traceback
                 traceback.print_exc()
                 return jsonify({"error": "Webhook signature verification failed", "detail": str(e)}), 400
             # debug the event received (can be very verbose)
@@ -184,6 +185,7 @@ def create_app() -> Flask:
             catalog = load_catalog_local()
             return jsonify(catalog)
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to load catalog", "detail": str(e)}), 500
 
@@ -201,6 +203,7 @@ def create_app() -> Flask:
             save_catalog(payload)
             return jsonify({"status": "ok"})
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to update catalog", "detail": str(e)}), 500
 
@@ -215,6 +218,7 @@ def create_app() -> Flask:
             cfg = load_runtime_config()
             return jsonify(cfg)
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to load config", "detail": str(e)}), 500
 
@@ -232,6 +236,7 @@ def create_app() -> Flask:
             save_runtime_config(payload)
             return jsonify({"status": "ok"})
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to update config", "detail": str(e)}), 500
 
@@ -286,6 +291,7 @@ def create_app() -> Flask:
                 }
             )
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to resolve publishable key", "detail": str(e)}), 500
 
@@ -360,6 +366,7 @@ def create_app() -> Flask:
                 }
             )
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to create customer", "detail": str(e)}), 500
 
@@ -487,6 +494,7 @@ def create_app() -> Flask:
                 }
             )
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to create subscription", "detail": str(e)}), 500
 
@@ -581,6 +589,7 @@ def create_app() -> Flask:
                 }
             )
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to create processing PaymentIntent", "detail": str(e)}), 500
 
@@ -628,6 +637,7 @@ def create_app() -> Flask:
                 }
             )
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to update payment method metadata", "detail": str(e)}), 500
 
@@ -690,6 +700,7 @@ def create_app() -> Flask:
                 }
             )
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return jsonify({"error": "Failed to retrieve payment method", "detail": str(e)}), 500
 

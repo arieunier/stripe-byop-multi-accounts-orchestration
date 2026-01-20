@@ -2,6 +2,10 @@
 
 This document lists **all Stripe `metadata` keys written by this codebase** (current implementation split across `app.py` APIs and `stripe_orchestration.py` webhook scenarios).
 
+Note: runtime configuration and catalog are stored as local JSON files (typically gitignored):
+- `config/runtime-config.json` (sample: `config/runtime-config-sample.json`)
+- `config/catalog.json` (sample: `config/catalog-sample.json`)
+
 ## Global rules
 
 - **All metadata keys are UPPERCASE** (breaking-change dev mode).

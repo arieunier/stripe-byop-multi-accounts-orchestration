@@ -4,25 +4,25 @@
       "account_alias": "EU",
       "amount_cents": 990,
       "currency": "eur",
-      "id": "price_1Smak3Rgx6wGxRDuoNGPnYLN"
+      "id": "price_1xxxxxxxx"
     },
     {
       "account_alias": "US",
       "amount_cents": 1190,
       "currency": "usd",
-      "id": "price_1SmdgIRgx6wGxRDuABteuWoX"
+      "id": "price_1xxxxxxxx"
     },
     {
       "account_alias": "GB",
       "amount_cents": 1000,
       "currency": "gbp",
-      "id": "price_1Sni0nRgx6wGxRDubY1HQ4wI"
+      "id": "price_1xxxxxxxx"
     },
     {
       "account_alias": "BR",
       "amount_cents": 1000,
       "currency": "brl",
-      "id": "price_1SrMLORgx6wGxRDun3H3Kn2f"
+      "id": "price_1xxxxxxxx"
     }
   ],
   "product": {

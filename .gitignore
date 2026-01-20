@@ -8,7 +8,9 @@ __pycache__/
 venv/
 ENV/
 env/
-
+config/runtime-config.json
+config/catalog.json
+config/runtime-config-local.json
 .env
 
 node_modules/

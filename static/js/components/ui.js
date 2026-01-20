@@ -63,22 +63,52 @@ export function formatMoney(amountCents, currency) {
   }
 }
 
+function iso2ToFlagEmoji(code) {
+  const c = String(code || "").trim().toUpperCase();
+  // Common non-ISO but frequently used codes:
+  if (c === "UK") return "🇬🇧";
+  if (c === "EU") return "🇪🇺";
+  // ISO 3166-1 alpha-2 flags are represented by "regional indicator symbols":
+  // 🇦 = 0x1F1E6 ... 🇿 = 0x1F1FF
+  if (!/^[A-Z]{2}$/.test(c)) return "🏳️";
+  const A = "A".charCodeAt(0);
+  const base = 0x1f1e6; // regional indicator A
+  const cp1 = base + (c.charCodeAt(0) - A);
+  const cp2 = base + (c.charCodeAt(1) - A);
+  return String.fromCodePoint(cp1, cp2);
+}
+
 export function countryBadgeForAlias(alias) {
   const a = String(alias || "").trim().toUpperCase();
-  if (a === "EU") return { emoji: "🇫🇷", label: "France", alias: "EU" };
+  if (a === "EU") return { emoji: "🇪🇺", label: "European Union", alias: "EU" };
   if (a === "US") return { emoji: "🇺🇸", label: "United States", alias: "US" };
   if (a === "UK" || a === "GB") return { emoji: "🇬🇧", label: "United Kingdom", alias: a };
+  if (/^[A-Z]{2}$/.test(a)) return { emoji: iso2ToFlagEmoji(a), label: a, alias: a };
   return { emoji: "🏳️", label: "Unknown", alias: a || "?" };
 }
 
 export function countryBadge({ alias, country } = {}) {
   const c = String(country || "").trim().toUpperCase();
-  if (c === "FR") return { emoji: "🇫🇷", label: "France", alias: String(alias || "").trim().toUpperCase() || "?" };
-  if (c === "US") return { emoji: "🇺🇸", label: "United States", alias: String(alias || "").trim().toUpperCase() || "?" };
-  // ISO2 is "GB", but many people use "UK" informally - accept both.
-  if (c === "GB" || c === "UK")
-    return { emoji: "🇬🇧", label: "United Kingdom", alias: String(alias || "").trim().toUpperCase() || "?" };
-  // Fallback to alias mapping (EU/US) if country isn't provided.
+  const a = String(alias || "").trim().toUpperCase() || "?";
+
+  // If we have a country ISO2, use the generic ISO2 flag rendering.
+  if (c) {
+    const cc = c === "UK" ? "GB" : c;
+    const emoji = iso2ToFlagEmoji(cc);
+    const label =
+      cc === "US"
+        ? "United States"
+        : cc === "FR"
+          ? "France"
+          : cc === "GB"
+            ? "United Kingdom"
+            : cc === "EU"
+              ? "European Union"
+              : cc;
+    return { emoji, label, alias: a };
+  }
+
+  // Fallback to alias mapping if country isn't provided.
   return countryBadgeForAlias(alias);
 }
 

@@ -10,7 +10,7 @@ Each webhook is received **on an account identified by the alias** (derived from
 ## Key conventions
 
 - **Accounts**
-  - **Master account**: alias `STRIPE_MASTER_ACCOUNT_ALIAS` (default: `EU`)
+  - **Master account**: `config/runtime-config.json: master_account_alias` (default: `EU`)
   - **Processing account**: any alias different from the master
 
 - **Metadata**

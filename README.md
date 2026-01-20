@@ -18,7 +18,20 @@ This is a **demo** app (Flask + HTML/CSS/JS) that simulates **multi-account Stri
 cp stripe.env.example .env
 ```
 
-- **2) Configure Stripe accounts + webhooks + CPM in `config/runtime-config.json` (or via `/config`)**
+- **2) Create local config files from the tracked samples**
+
+This repo includes **sample config files** you can safely commit/share:
+- `config/runtime-config-sample.json`
+- `config/catalog-sample.json`
+
+Create your local (secret) config files (ignored by git):
+
+```bash
+cp config/runtime-config-sample.json config/runtime-config.json
+cp config/catalog-sample.json config/catalog.json
+```
+
+- **3) Configure Stripe accounts + webhooks + CPM in `config/runtime-config.json` (or via `/config`)**
 Runtime Stripe configuration is **JSON-backed** (no restart needed):
 - `config/runtime-config.json`
 
@@ -41,7 +54,7 @@ The runtime configuration is stored in:
 The product catalog is stored in:
 - `config/catalog.json`
 
-- **3) Update your Price IDs in `config/catalog.json`**
+- **4) Update your Price IDs in `config/catalog.json`**
 Replace placeholders / set your real `price_...` IDs and `account_alias` mappings.
 
 ### Product & price data (`config/catalog.json`)
@@ -65,6 +78,16 @@ This file drives the whole flow:
 - Ensure every `prices[].account_alias` matches an alias configured in `config/runtime-config.json` under `accounts`.
 
 If an alias is missing, the backend will return an error when resolving keys for that price.
+
+### Sample files vs local files
+- **Tracked (safe)**:
+  - `config/runtime-config-sample.json`
+  - `config/catalog-sample.json`
+- **Local only (contains secrets, gitignored)**:
+  - `config/runtime-config.json`
+  - `config/catalog.json`
+
+These local files are already listed in `.gitignore` (along with `.env`), so you can safely keep secrets in your working copy.
 
 ### Address autocomplete (Stripe Address Element)
 Per Stripe docs, **when you use the Address Element standalone**, you must provide your own Google Maps Places key via `autocomplete.apiKey` to enable address autocomplete.  

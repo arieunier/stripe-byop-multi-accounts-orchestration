@@ -1,0 +1,39 @@
+{
+  "master_account_alias": "EU",
+  "accounts": {
+    "EU": {
+      "account_id": "acct_1xxxxxxxx",
+      "secret_key": "xxx",
+      "publishable_key": "xxx",
+      "webhook_signing_secret": "xxxx",
+      "country": "FR"
+    },
+    "US": {
+      "account_id": "acct_1xxxxxxxx",
+      "secret_key": "xxx",
+      "publishable_key": "xxx",
+      "webhook_signing_secret": "xxxx",
+      "country": "US"
+    },
+    "GB": {
+      "account_id": "acct_1xxxxxxxx",
+      "secret_key": "xxx",
+      "publishable_key": "xxx",
+      "webhook_signing_secret": "xxxx",
+      "country": "GB"
+    },
+    "BR": {
+        "account_id": "acct_1xxxxxxxx",
+        "secret_key": "xxx",
+        "publishable_key": "xxx",
+        "webhook_signing_secret": "xxxx",
+        "country": "BR"
+      }
+  },
+  "master_custom_payment_methods": {
+    "EU": "cpmt_1xxxxxxxx",
+    "US": "cpmt_1xxxxxxxx",
+    "GB": "cpmt_1xxxxxxxx",
+    "BR": "cpmt_1xxxxxxxx"
+  }
+}
