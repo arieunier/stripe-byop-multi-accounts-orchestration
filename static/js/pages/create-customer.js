@@ -71,6 +71,9 @@ function renderResult(resultBlock, result, { masterAlias, processingAlias }) {
 function renderSubscription(resultBlock, sub, { masterAlias, processingAlias }) {
   const pBadge = countryBadge({ alias: processingAlias, country: sub?.processing_country });
   const mBadge = countryBadge({ alias: masterAlias, country: sub?.master_country });
+  const ccy = sub?.invoice_currency || "";
+  const totalIncl = sub?.invoice_total != null ? formatMoney(Number(sub.invoice_total), ccy) : null;
+  const totalExcl = sub?.invoice_total_excluding_tax != null ? formatMoney(Number(sub.invoice_total_excluding_tax), ccy) : null;
   const wrap = document.createElement("div");
   wrap.style.display = "grid";
   wrap.style.gap = "10px";
@@ -81,6 +84,14 @@ function renderSubscription(resultBlock, sub, { masterAlias, processingAlias }) 
       <span class="tag">Stripe subscription id: <span class="mono">${escapeHtml(sub.stripe_subscription_id)}</span></span>
       ${sub.latest_invoice_id ? `<span class="tag">Latest invoice id: <span class="mono">${escapeHtml(sub.latest_invoice_id)}</span></span>` : ""}
     </div>
+    ${
+      totalIncl || totalExcl
+        ? `<div class="row">
+            ${totalIncl ? `<span class="tag">Total: <span class="mono">${escapeHtml(totalIncl)}</span></span>` : ""}
+            ${totalExcl ? `<span class="tag">Total excl. tax: <span class="mono">${escapeHtml(totalExcl)}</span></span>` : ""}
+          </div>`
+        : ""
+    }
     ${sub.hosted_invoice_url ? `<div class="hint">Invoice: <a class="mono" href="${escapeHtml(sub.hosted_invoice_url)}" target="_blank" rel="noreferrer">Open hosted invoice</a></div>` : ""}
     <div class="hint">
       Subscription status: <span class="mono">${escapeHtml(sub.status || "")}</span> — created on <span title="${escapeHtml(
@@ -328,6 +339,9 @@ async function main() {
         latest_invoice_id: sub.latest_invoice_id,
         hosted_invoice_url: sub.hosted_invoice_url,
         master_payment_intent_id: sub.payment_intent_id,
+        invoice_currency: sub.invoice_currency,
+        invoice_total: sub.invoice_total,
+        invoice_total_excluding_tax: sub.invoice_total_excluding_tax,
       };
 
       // If processing == master, allow payment on the frontend using Payment Element + PaymentIntent client_secret.

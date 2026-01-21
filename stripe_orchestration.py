@@ -255,10 +255,33 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
 
     # Scenario 3: invoice.paid on processing account
     elif normalized_alias != master_alias and event_type == "invoice.paid":
-        inv = safe_get(safe_get(event, "data"), "object")
-        processing_pm = safe_get(inv, "default_payment_method")
-        processing_pi = safe_get(inv, "payment_intent")
-        paid_at = safe_get(safe_get(inv, "status_transitions"), "paid_at")
+        # Some webhook deliveries omit fields like payment_intent.
+        # To make this robust, we re-fetch the invoice from the processing account using the invoice id from the event.
+        inv_stub = safe_get(safe_get(event, "data"), "object")
+        processing_invoice_id = _require(safe_get(inv_stub, "id"), "Missing processing invoice field: data.object.id")
+        print(f"processing_invoice_id: {processing_invoice_id}")
+        processing_pi= None
+        processing_pm = None
+        paid_at = None
+        # breaking change since api version 2020-08-27, the payment_intent is not always present in the invoice
+        while processing_pi is None or processing_pi == "":
+            _processing_account_id, processing_secret_key, _ = get_account_env(normalized_alias)
+            processing_client = stripe_client(processing_secret_key)
+            inv = processing_client.v1.invoices.retrieve(str(processing_invoice_id),options={"stripe_version": "2020-08-27"})
+
+            processing_pm = safe_get(inv, "default_payment_method")
+            processing_pi = safe_get(inv, "payment_intent")
+            paid_at = safe_get(safe_get(inv, "status_transitions"), "paid_at")
+            print(f"processing_pi: {processing_pi}")
+            print(f"processing_pm: {processing_pm}")
+            print(f"paid_at: {paid_at}")
+            import time
+            if (processing_pi is not None and processing_pi != "" and processing_pm is not None and processing_pm != "" and paid_at is not None and paid_at != ""):
+                break
+            else:
+                print("waiting for processing_pi, processing_pm, and paid_at to be set")
+                time.sleep(1)
+
         _require(processing_pm, "Missing processing invoice field: data.object.default_payment_method")
         _require(processing_pi, "Missing processing invoice field: data.object.payment_intent")
         _require(paid_at, "Missing processing invoice field: data.object.status_transitions.paid_at")
@@ -315,17 +338,43 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
 
     # Scenario 4: invoice.payment_failed on processing account
     elif normalized_alias != master_alias and event_type == "invoice.payment_failed":
-        inv = safe_get(safe_get(event, "data"), "object")
-        processing_pm = safe_get(inv, "default_payment_method")
-        processing_pi = safe_get(inv, "payment_intent")
-        st = safe_get(inv, "status_transitions")
-        ts = (
-            safe_get(st, "paid_at")
-            or safe_get(st, "finalized_at")
-            or safe_get(st, "marked_uncollectible_at")
-            or safe_get(st, "voided_at")
-            or safe_get(inv, "created")
-        )
+        inv_stub = safe_get(safe_get(event, "data"), "object")
+        processing_invoice_id = _require(safe_get(inv_stub, "id"), "Missing processing invoice field: data.object.id")
+        print(f"processing_invoice_id: {processing_invoice_id}")
+        processing_pi= None
+        processing_pm = None
+        ts = None
+        st = None
+        inv = None
+        # breaking change since api version 2020-08-27, the payment_intent is not always present in the invoice
+        while ts is None or ts == "":
+             _processing_account_id, processing_secret_key, _ = get_account_env(normalized_alias)
+             processing_client = stripe_client(processing_secret_key)
+             inv = processing_client.v1.invoices.retrieve(str(processing_invoice_id),options={"stripe_version": "2020-08-27"})
+
+             processing_pm = safe_get(inv, "default_payment_method")
+             processing_pi = safe_get(inv, "payment_intent")
+             paid_at = safe_get(safe_get(inv, "status_transitions"), "paid_at")
+             print(f"processing_pi: {processing_pi}")
+             print(f"processing_pm: {processing_pm}")
+             print(f"paid_at: {paid_at}")
+             st = safe_get(inv, "status_transitions")
+             ts = (
+                safe_get(st, "paid_at")
+                or safe_get(st, "finalized_at")
+                or safe_get(st, "marked_uncollectible_at")
+                or safe_get(st, "voided_at")
+                or safe_get(inv, "created")
+             )
+             print(f"ts: {ts}")
+             print(f"st: {st}")
+             import time
+             if (processing_pi is not None and processing_pi != "" and processing_pm is not None and processing_pm != "" and paid_at is not None and paid_at != ""):
+                break
+             else:
+                print("waiting for processing_pi, processing_pm, and paid_at to be set")
+                time.sleep(1)
+       
         _require(processing_pm, "Missing processing invoice field: data.object.default_payment_method")
         _require(processing_pi, "Missing processing invoice field: data.object.payment_intent")
         _require(ts, "Missing processing invoice field: data.object.status_transitions.* timestamp")

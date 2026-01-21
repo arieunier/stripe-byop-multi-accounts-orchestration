@@ -166,13 +166,13 @@ def create_app() -> Flask:
                     "type": event_type,
                 }
             )
-
-            # Delegate orchestration logic (scenarios 1-6)
-            handle_orchestration_event(normalized_alias, event, resolved_account_id)
             print(
                 f"[stripe-webhook] alias={normalized_alias} account_id={resolved_account_id} "
                 f"type={event_type} event_account_id={event_account_id}"
             )
+            # Delegate orchestration logic (scenarios 1-6)
+            handle_orchestration_event(normalized_alias, event, resolved_account_id)
+            
             return "ok", 200
         except Exception as e:
             import traceback
@@ -423,6 +423,8 @@ def create_app() -> Flask:
             hosted_invoice_url = None
             invoice_currency = None
             invoice_total = None
+            invoice_total_excluding_tax = None
+            invoice_taxable_amount = None
             invoice_amount_due = None
             payment_intent_id = None
             payment_intent_client_secret = None
@@ -437,9 +439,34 @@ def create_app() -> Flask:
                 )
                 invoice_currency = getattr(latest_invoice, "currency", None) or (latest_invoice.get("currency") if latest_invoice else None)
                 invoice_total = getattr(latest_invoice, "total", None) or (latest_invoice.get("total") if latest_invoice else None)
+                invoice_total_excluding_tax = getattr(latest_invoice, "total_excluding_tax", None) or (
+                    latest_invoice.get("total_excluding_tax") if latest_invoice else None
+                )
                 invoice_amount_due = getattr(latest_invoice, "amount_due", None) or (
                     latest_invoice.get("amount_due") if latest_invoice else None
                 )
+
+                # taxable_amount is exposed per tax breakdown entry in invoice.total_taxes[].
+                # We return a single number by summing them (in the invoice currency minor unit).
+                try:
+                    total_taxes = getattr(latest_invoice, "total_taxes", None) or (
+                        latest_invoice.get("total_taxes") if latest_invoice else None
+                    )
+                    taxable_sum = 0
+                    if total_taxes:
+                        for t in total_taxes:
+                            ta = getattr(t, "taxable_amount", None) if hasattr(t, "taxable_amount") else None
+                            if ta is None and isinstance(t, dict):
+                                ta = t.get("taxable_amount")
+                            if ta is None:
+                                continue
+                            try:
+                                taxable_sum += int(ta)
+                            except Exception:
+                                continue
+                    invoice_taxable_amount = taxable_sum if taxable_sum else None
+                except Exception:
+                    invoice_taxable_amount = None
 
                 pi = getattr(latest_invoice, "payment_intent", None) or (latest_invoice.get("payment_intent") if latest_invoice else None)
                 payment_intent_id = (getattr(pi, "id", None) or (pi.get("id") if pi else None)) if pi else None
@@ -483,6 +510,8 @@ def create_app() -> Flask:
                     "hosted_invoice_url": hosted_invoice_url,
                     "invoice_currency": invoice_currency,
                     "invoice_total": invoice_total,
+                    "invoice_total_excluding_tax": invoice_total_excluding_tax,
+                    "invoice_taxable_amount": invoice_taxable_amount,
                     "invoice_amount_due": invoice_amount_due,
                     "payment_intent_id": payment_intent_id,
                     "payment_intent_client_secret": payment_intent_client_secret,
