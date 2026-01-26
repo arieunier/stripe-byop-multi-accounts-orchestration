@@ -116,6 +116,8 @@ Open:
 ### Documentation
 - [`webhooks.md`](webhooks.md): detailed description of the webhook orchestration scenarios (master vs processing, triggers, actions).
 - [`metadata.md`](metadata.md): exhaustive list of all Stripe metadata keys written by this project, per Stripe object.
+- [`integration-guide.md`](integration-guide.md): client-facing integration guide (architecture, data model, sync + async workflows).
+- [`diagrams.md`](diagrams.md): Mermaid diagrams (global architecture + end-to-end sequence).
 
 ### Webhook monitoring (real-time)
 This project includes a real-time webhook monitoring page (no persistence):

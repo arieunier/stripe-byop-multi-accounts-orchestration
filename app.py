@@ -189,6 +189,26 @@ def create_app() -> Flask:
             traceback.print_exc()
             return jsonify({"error": "Failed to load catalog", "detail": str(e)}), 500
 
+    @app.get("/card_failed")
+    def card_failed_page():
+        #print everything received in the request, both headers, body, params, etc
+        print(f"headers: {request.headers}")
+        print(f"body: {request.get_data(as_text=True)}")
+        print(f"params: {request.args}")
+        print(f"form: {request.form}")
+        print(f"json: {request.get_json(silent=True)}")
+        print(f"files: {request.files}")
+        print(f"cookies: {request.cookies}")
+        print(f"url: {request.url}")
+        print(f"path: {request.path}")
+        print(f"full_path: {request.full_path}")
+        print(f"base_url: {request.base_url}")
+        print(f"host: {request.host}")
+        print(f"remote_addr: {request.remote_addr}")
+        print(f"user_agent: {request.user_agent}")
+        # just return OK
+        return "OK", 200
+
     @app.put("/api/catalog")
     @requires_basic_auth
     def api_update_catalog():
