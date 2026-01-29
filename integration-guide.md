@@ -354,8 +354,11 @@ General implementation notes:
   2) Find existing mirror invoice with metadata `MASTER_ACCOUNT_INVOICE_ID`
   3) If missing:
      - `invoice_items.create({ customer, currency, amount, description, period })`
-     - `invoices.create({ customer, currency, collection_method:"charge_automatically", pending_invoice_items_behavior:"include", default_payment_method:<processing pm>, metadata:{...} })`
+     - `invoices.create({ customer, currency, collection_method:"charge_automatically", pending_invoice_items_behavior:"include", default_payment_method:<processing pm>, number:<MASTER invoice.number>, metadata:{...} })`
      - `invoices.pay(processing_invoice_id, { off_session: true })`
+
+**Note**
+- The processing invoice `number` is explicitly set to the **master invoice number** to make cross-account reconciliation and support operations easier.
 
 ---
 

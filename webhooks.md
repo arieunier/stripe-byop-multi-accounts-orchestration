@@ -106,6 +106,7 @@ Stored in `config/runtime-config.json` (editable live from `GET /config`):
         - `collection_method="charge_automatically"`
         - `pending_invoice_items_behavior="include"`
         - `default_payment_method=PROCESSING_ACCOUNT_PAYMENT_METHOD`
+        - `number=<MASTER invoice.number>` (propagated to the processing invoice to simplify cross-account reconciliation)
         - Metadata written:
           - `MASTER_ACCOUNT_INVOICE_ID`
           - `MASTER_ACCOUNT_CUSTOMER_ID`
