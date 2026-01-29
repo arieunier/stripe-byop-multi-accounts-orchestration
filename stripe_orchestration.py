@@ -531,6 +531,7 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
     # Scenario 2: invoice.payment_attempt_required on master account
     elif normalized_alias == master_alias and event_type == "invoice.payment_attempt_required":
         inv = safe_get(safe_get(event, "data"), "object")
+        
         master_invoice_id = _require(safe_get(inv, "id"), "Missing invoice id in webhook: data.object.id")
         currency = _require(safe_get(inv, "currency"), "Missing invoice currency in webhook: data.object.currency")
         amount = safe_get(inv, "amount_due")
@@ -571,6 +572,11 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
             _get_upper(pm_md, "PROCESSING_ACCOUNT_CUSTOMER_ID"),
             "Missing default_payment_method.metadata.PROCESSING_ACCOUNT_CUSTOMER_ID on subscription",
         )
+        # get invoice from the master account, in order to save the invoice number field
+        invoice = master_client.v1.invoices.retrieve(str(master_invoice_id))
+        invoice_number = safe_get(invoice, "number")
+
+
 
         processing_alias = get_alias_by_account_id(str(processing_account_id))
         _processing_account_id, processing_secret_key, _ = get_account_env(processing_alias)
@@ -593,6 +599,7 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
                 "amount": int(amount),
                 "description": str(description),
                 "period": {"start": int(period_start), "end": int(period_end)},
+
             }
         )
 
@@ -604,6 +611,7 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
                 "auto_advance": True,
                 "pending_invoice_items_behavior": "include",
                 "default_payment_method": str(processing_payment_method_id),
+                "number": str(invoice_number), #make sure we propagate the invoice number to the processing invoice, to be able to track the invoice number on the processing invoice
                 "metadata": {
                     "MASTER_ACCOUNT_INVOICE_ID": str(master_invoice_id),
                     "MASTER_ACCOUNT_CUSTOMER_ID": str(master_customer_id),
