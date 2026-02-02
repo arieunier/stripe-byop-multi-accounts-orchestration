@@ -65,6 +65,10 @@ Safe-to-share samples are included:
 You can edit config live from:
 - `GET /config` (Basic Auth; password configured via `.env` with `ADMIN_PASSWORD`)
 
+Feature flags (runtime-config.json):
+- `skip_sync_non_master_invoice` (default: `true`): when `processing_account_id != master_account_id`, tag Subscription + master Invoice with `metadata.SKIP_NS_INVOICE_SYNC="true"`.
+- `propagate_tax_to_processing` (default: `true`): enable Scenario #1 “send_invoice” processing invoice creation with tax propagation (`TAXES` payload + `tax_amounts` update).
+
 ---
 
 ### 2) Data model (Stripe objects + metadata)
@@ -99,12 +103,15 @@ Below is the complete set of objects and metadata written by this project.
 - `MASTER_ACCOUNT_ID`
 - `SELECTED_PRICE_ID`
 - `SELECTED_CURRENCY`
+- `SKIP_NS_INVOICE_SYNC="true"` (when `processing_account_id != master_account_id`)
 
 ##### C) `Invoice` (master)
 Invoices are created by Stripe as part of subscription billing.
 
 **Metadata written/updated**
 - In Scenario #3 (processing invoice paid): `MASTER_ACCOUNT_PAYMENT_RECORD_ID` is written on the master invoice to link it to the master PaymentRecord.
+- When `processing_account_id != master_account_id`, `SKIP_NS_INVOICE_SYNC="true"` is added to the master invoice created by subscription creation.
+- In Scenario #2, if `subscription_details.metadata.SKIP_NS_INVOICE_SYNC` exists, it is propagated to the master invoice metadata.
 
 ##### D) `PaymentMethod` (master) — Custom Payment Method (CPM)
 
@@ -189,6 +196,26 @@ This metadata is used later by Scenario #1 (and also as a fallback for refunds/d
 
 This metadata is used by Scenario #3/#4 to locate the master invoice/subscription/customer.
 
+Other propagated fields (not metadata):
+- `number` is set to the **master invoice number**.
+
+##### B2) Processing invoice for downstream sync (send_invoice)
+**Created by**: Scenario #1 (initial payment orchestration)
+
+- Builds processing `invoice_items` mirroring each master invoice line, and stores a JSON tax payload in `metadata.TAXES`.
+- Creates a processing invoice with:
+  - `collection_method="send_invoice"`
+  - `days_until_due=1`
+  - `pending_invoice_items_behavior="include"`
+  - `number=<MASTER invoice.number>`
+- Updates each invoice line `tax_amounts` using the stored `metadata.taxes`
+- Finalizes the invoice, then attaches the original processing PaymentIntent for traceability.
+
+**Metadata written**
+- `TAXES` (JSON string) on processing invoice items/lines
+- `PROCESSING_ACCOUNT_PAYMENT_INTENT_ID` on the processing invoice
+- `IS_INITIAL_PAYMENT="true"` on the processing invoice (used to skip Scenario #3 on `invoice.paid`)
+
 ##### C) `Refund` / `Dispute` (processing)
 Refunds and disputes are created by Stripe as a consequence of processing-side payment activity.
 
@@ -242,7 +269,11 @@ Backend performs (on **master** account):
   - `payment_settings.save_default_payment_method = "on_subscription"`
   - `automatic_tax.enabled = true`
   - metadata: `PROCESSING_ACCOUNT_ID`, `MASTER_ACCOUNT_ID`, `SELECTED_PRICE_ID`, `SELECTED_CURRENCY`
+  - if `processing_account_id != master_account_id`: `metadata.SKIP_NS_INVOICE_SYNC="true"`
   - expand: `latest_invoice`, `latest_invoice.payment_intent`, `latest_invoice.confirmation_secret`, `pending_setup_intent`
+
+If `processing_account_id != master_account_id`, the backend also updates the master `latest_invoice`:
+- `invoices.update(latest_invoice_id, { metadata: { SKIP_NS_INVOICE_SYNC: "true" } })`
 
 Backend returns (subset):
 - `stripe_subscription_id`
@@ -330,6 +361,21 @@ General implementation notes:
      - `invoices.attach_payment(MASTER_ACCOUNT_INVOICE_ID, { payment_record: <id> })`
   6) Set the master subscription `default_payment_method = <master CPM>`
 
+**Additional processing-side invoice for downstream sync**
+- Builds processing `invoice_items` mirroring each `master_invoice.lines.data[]` item and writes `metadata.taxes` (JSON string)
+- Creates a processing invoice with:
+  - `collection_method="send_invoice"`
+  - `days_until_due=1`
+  - `pending_invoice_items_behavior="include"`
+  - `number=<MASTER invoice.number>`
+- For each processing invoice line:
+  - reads `metadata.TAXES` and updates `tax_amounts`:
+    - `invoices.line_items.update(processing_invoice_id, line_id, { tax_amounts: <taxesData> })`
+- Finalizes the processing invoice:
+  - `invoices.finalize_invoice(processing_invoice_id)`
+- Attaches the original PaymentIntent for traceability:
+  - `invoices.attach_payment(processing_invoice_id, { payment_intent: <processing PI> })`
+
 ---
 
 #### Scenario 2 — Payment attempt required on master (mirror invoice on processing)
@@ -348,6 +394,8 @@ General implementation notes:
 
 **Stripe calls**
 - On **master**:
+  0) If `subscription_details.metadata.SKIP_NS_INVOICE_SYNC` exists, persist it on the master invoice:
+     - `invoices.update(master_invoice_id, { metadata: { SKIP_NS_INVOICE_SYNC: <value> } })`
   1) Retrieve master subscription with expand default PM
      - `subscriptions.retrieve(MASTER_ACCOUNT_SUBSCRIPTION_ID, { expand:["default_payment_method"] })`
 - On **processing**:
@@ -377,6 +425,7 @@ as the source of truth.
 **Stripe calls**
 - On **processing**:
   1) `invoices.retrieve(processing_invoice_id)` (to read payment method, payment intent, timestamps, metadata)
+- If `processing_invoice.metadata.IS_INITIAL_PAYMENT == "true"`: **skip** (already handled in Scenario #1)
 - On **master**:
   2) `subscriptions.retrieve(master_subscription_id, { expand:["default_payment_method"] })`
   3) `payment_records.report_payment(...)` (outcome guaranteed)

@@ -35,7 +35,16 @@ def _atomic_write_json(path: str, data: Dict[str, Any]) -> None:
 
 
 def _default_runtime_config() -> Dict[str, Any]:
-    return {"master_account_alias": "EU", "accounts": {}, "master_custom_payment_methods": {}}
+    # Feature flags are intentionally stored in runtime-config.json so they can be toggled live from /config.
+    return {
+        "master_account_alias": "EU",
+        "accounts": {},
+        "master_custom_payment_methods": {},
+        # If true, when processing != master we tag Subscription + Master Invoice with metadata.SKIP_NS_INVOICE_SYNC="true".
+        "skip_sync_non_master_invoice": True,
+        # If true, Scenario #1 propagates master invoice tax details to a processing send_invoice invoice.
+        "propagate_tax_to_processing": True,
+    }
 
 
 def _build_runtime_from_env() -> Dict[str, Any]:
@@ -44,7 +53,13 @@ def _build_runtime_from_env() -> Dict[str, Any]:
     This keeps backward compatibility for first run, while allowing live edits afterwards.
     """
     master_alias = (os.getenv("STRIPE_MASTER_ACCOUNT_ALIAS", "EU") or "EU").strip().upper()
-    cfg: Dict[str, Any] = {"master_account_alias": master_alias, "accounts": {}, "master_custom_payment_methods": {}}
+    cfg: Dict[str, Any] = {
+        "master_account_alias": master_alias,
+        "accounts": {},
+        "master_custom_payment_methods": {},
+        "skip_sync_non_master_invoice": True,
+        "propagate_tax_to_processing": True,
+    }
 
     # Accounts: scan env for STRIPE_ACCOUNT_<ALIAS>_ACCOUNT_ID
     for k, v in os.environ.items():
@@ -94,12 +109,23 @@ def load_runtime_config(force_reload: bool = False) -> Dict[str, Any]:
                 return _runtime_cache
             with open(RUNTIME_CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f) or {}
+            # Ensure new keys exist with sane defaults (do not force a write).
+            defaults = _default_runtime_config()
+            if isinstance(data, dict):
+                for k, v in defaults.items():
+                    if k not in data:
+                        data[k] = v
             _runtime_cache = data
             _runtime_mtime = mtime
             return data
 
         # No runtime file yet: fallback to env
         data = _build_runtime_from_env()
+        defaults = _default_runtime_config()
+        if isinstance(data, dict):
+            for k, v in defaults.items():
+                if k not in data:
+                    data[k] = v
         _runtime_cache = data
         _runtime_mtime = None
         return data

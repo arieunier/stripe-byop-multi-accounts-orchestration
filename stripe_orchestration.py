@@ -13,6 +13,7 @@ Conventions used by this project:
 - Timestamps passed to PaymentRecord APIs are normalized to avoid future-timestamp rejections by Stripe
 """
 
+import json
 import traceback
 from typing import Any, Dict, Optional
 
@@ -21,6 +22,7 @@ from stripe_helpers import (
     get_alias_by_account_id,
     get_master_alias,
     get_master_custom_payment_method_type,
+    get_runtime_bool,
     normalize_report_timestamp,
     safe_get,
     stripe_client,
@@ -186,6 +188,155 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
             _update_master_invoice_payment_record_id(master_client, str(master_invoice_id), str(payment_record_id))
             master_client.v1.subscriptions.update(str(master_subscription_id), {"default_payment_method": str(pm_master_id)})
 
+            # --- NEW: Build a "send_invoice" invoice on the processing account mirroring the master invoice lines,
+            # including tax details as structured data. This is used for downstream systems (e.g. invoicing sync)
+            # when processing != master.
+            try:
+                if not get_runtime_bool("propagate_tax_to_processing", True):
+                    raise StopIteration("propagate_tax_to_processing disabled")
+                # 1) Build tax_amounts structures from master invoice lines.
+                master_invoice_lines = safe_get(safe_get(invoice, "lines"), "data") or []
+                if not isinstance(master_invoice_lines, list):
+                    master_invoice_lines = []
+
+                master_invoice_number = safe_get(invoice, "number")
+                if master_invoice_number is None:
+                    # Fallback: retrieve invoice again (some shapes may omit number)
+                    inv2 = master_client.v1.invoices.retrieve(str(master_invoice_id))
+                    master_invoice_number = safe_get(inv2, "number")
+
+                # Processing client (same alias as the PaymentIntent)
+                _processing_account_id, processing_secret_key, _ = get_account_env(normalized_alias)
+                processing_client = stripe_client(processing_secret_key)
+
+                # Use PI.customer as processing customer id (in org sharing setups it matches the master customer id).
+                proc_customer_id = processing_customer_id or customer_id
+                _require(proc_customer_id, "Missing processing customer id for invoice creation")
+
+                for master_invoice_item in master_invoice_lines:
+                    taxes = safe_get(master_invoice_item, "taxes") or []
+                    taxes_data = []
+                    if isinstance(taxes, list):
+                        for t in taxes:
+                            trd = safe_get(t, "tax_rate_details") or {}
+                            tax_rate_id = safe_get(trd, "tax_rate")
+                            if not tax_rate_id:
+                                continue
+
+                            tax_master = master_client.v1.tax_rates.retrieve(str(tax_rate_id))
+                            display_name = safe_get(tax_master, "display_name") or ""
+                            jurisdiction = safe_get(tax_master, "jurisdiction") or ""
+                            tax_display_name = f"{display_name}-{jurisdiction}".strip("-")
+
+                            tax_behavior = str(safe_get(t, "tax_behavior") or "").lower()
+                            inclusive = tax_behavior == "inclusive"
+                            percentage = safe_get(tax_master, "effective_percentage")
+
+                            taxes_data.append(
+                                {
+                                    "amount": int(safe_get(t, "amount") or 0),
+                                    "taxable_amount": int(safe_get(t, "taxable_amount") or 0),
+                                    "tax_rate_data": {
+                                        "inclusive": bool(inclusive),
+                                        "display_name": str(tax_display_name),
+                                        "percentage": percentage,
+                                    },
+                                }
+                            )
+
+                    # Create invoice item on processing with taxes encoded as JSON in metadata (Stripe metadata values are strings).
+                    item_currency = safe_get(master_invoice_item, "currency") or pi_currency
+                    item_amount = safe_get(master_invoice_item, "amount") or safe_get(master_invoice_item, "subtotal")
+                    item_desc = safe_get(master_invoice_item, "description") or ""
+                    _require(item_currency, "Missing currency on master invoice line item")
+                    _require(item_amount, "Missing amount on master invoice line item")
+
+                    processing_client.v1.invoice_items.create(
+                        {
+                            "customer": str(proc_customer_id),
+                            "currency": str(item_currency),
+                            "amount": int(item_amount),
+                            "description": str(item_desc),
+                            "metadata": {"TAXES": json.dumps(taxes_data, separators=(",", ":"))},
+                        }
+                    )
+
+                # 2) Create processing invoice (send_invoice) and propagate invoice number.
+                processing_invoice = processing_client.v1.invoices.create(
+                    {
+                        "customer": str(proc_customer_id),
+                        "pending_invoice_items_behavior": "include",
+                        "collection_method": "send_invoice",
+                        "days_until_due": 1,
+                        "number": str(master_invoice_number) if master_invoice_number else None,
+                        "expand": ["lines"],
+                        "metadata": {
+                            "MASTER_ACCOUNT_INVOICE_ID": str(master_invoice_id),
+                            "MASTER_ACCOUNT_SUBSCRIPTION_ID": str(master_subscription_id),
+                            "MASTER_ACCOUNT_ID": str(resolved_account_id),
+                        },
+                    }
+                )
+                processing_invoice_id = safe_get(processing_invoice, "id")
+                _require(processing_invoice_id, "Failed to create processing send_invoice invoice")
+
+                # 3) For each processing invoice line, read metadata.TAXES and set invoice line tax_amounts accordingly.
+                processing_lines = safe_get(safe_get(processing_invoice, "lines"), "data") or []
+                if isinstance(processing_lines, list):
+                    for pl in processing_lines:
+                        line_id = safe_get(pl, "id")
+                        if not line_id:
+                            continue
+                        md = safe_get(pl, "metadata") or {}
+                        raw = safe_get(md, "TAXES")
+                        if not raw:
+                            continue
+                        try:
+                            line_taxes = json.loads(raw) if isinstance(raw, str) else raw
+                        except Exception:
+                            line_taxes = None
+                        if not line_taxes:
+                            continue
+
+                        # StripeClient provides invoices.update_lines(invoice, {lines:[{id, tax_amounts:[...]}]})
+                        processing_client.v1.invoices.line_items.update(
+                            str(processing_invoice_id), 
+                            str(line_id),
+                            {"tax_amounts": line_taxes},
+                        )
+
+                # 4) Finalize invoice on processing
+                processing_client.v1.invoices.finalize_invoice(str(processing_invoice_id))
+
+                # 5) Attach the original processing PaymentIntent for traceability.
+                # Stripe does not always support attaching an existing PaymentIntent to a "send_invoice" invoice.
+                # We persist it in metadata and best-effort attempt an invoice.pay(...) with payment_intent if supported.
+                try:
+                    processing_client.v1.invoices.update(
+                        str(processing_invoice_id),
+                        {"metadata": {
+                            "PROCESSING_ACCOUNT_PAYMENT_INTENT_ID": str(processing_payment_intent_id),
+                            "IS_INITIAL_PAYMENT": "true",
+                        },
+                        },
+                    )
+                except Exception:
+                    traceback.print_exc()
+                try:
+                    processing_client.v1.invoices.attach_payment(
+                        str(processing_invoice_id),
+                        {"payment_intent": str(processing_payment_intent_id)},
+                    )
+                except Exception:
+                    # Best-effort only; keep orchestration successful even if Stripe rejects this operation.
+                    traceback.print_exc()
+
+            except StopIteration:
+                # Feature disabled: skip silently.
+                pass
+            except Exception:
+                traceback.print_exc()
+
             print(
                 "[stripe-webhook-orch] scenario=initial_payment "
                 f"processing_alias={normalized_alias} master_alias={master_alias} "
@@ -263,12 +414,17 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
         processing_pi= None
         processing_pm = None
         paid_at = None
-        # breaking change since api version 2020-08-27, the payment_intent is not always present in the invoice
+        
         while processing_pi is None or processing_pi == "":
             _processing_account_id, processing_secret_key, _ = get_account_env(normalized_alias)
             processing_client = stripe_client(processing_secret_key)
             inv = processing_client.v1.invoices.retrieve(str(processing_invoice_id),options={"stripe_version": "2020-08-27"})
-
+            # gets all metadata from the invoice
+            md = safe_get(inv, "metadata") or {}
+            is_initial_payment = safe_get(md, "IS_INITIAL_PAYMENT")
+            if is_initial_payment is not None and is_initial_payment == "true":
+                print("initial payment already processed, skipping")
+                return
             processing_pm = safe_get(inv, "default_payment_method")
             processing_pi = safe_get(inv, "payment_intent")
             paid_at = safe_get(safe_get(inv, "status_transitions"), "paid_at")
@@ -549,6 +705,8 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
         parent = safe_get(inv, "parent")
         subscription_details = safe_get(parent, "subscription_details")
         sd_md = safe_get(subscription_details, "metadata") or {}
+        # Optional flag propagated from subscription metadata (used by some clients to skip invoice sync in downstream systems).
+        skip_ns_invoice_sync = safe_get(sd_md, "SKIP_NS_INVOICE_SYNC")
         master_subscription_id = _require(
             safe_get(subscription_details, "subscription"),
             "Missing subscription id in webhook: data.object.parent.subscription_details.subscription",
@@ -560,6 +718,18 @@ def handle_orchestration_event(normalized_alias: str, event: Any, resolved_accou
 
         _master_account_id, master_secret_key, _ = get_account_env(master_alias)
         master_client = stripe_client(master_secret_key)
+
+        # If enabled, and the webhook carries SKIP_NS_INVOICE_SYNC in subscription_details.metadata,
+        # persist it on the master invoice.
+        if get_runtime_bool("skip_sync_non_master_invoice", True) and skip_ns_invoice_sync is not None and str(skip_ns_invoice_sync).strip() != "":
+            try:
+                v = str(skip_ns_invoice_sync).strip()
+                if isinstance(skip_ns_invoice_sync, bool):
+                    v = "true" if skip_ns_invoice_sync else "false"
+                master_client.v1.invoices.update(str(master_invoice_id), {"metadata": {"SKIP_NS_INVOICE_SYNC": v}})
+            except Exception:
+                traceback.print_exc()
+
         sub = master_client.v1.subscriptions.retrieve(str(master_subscription_id), {"expand": ["default_payment_method"]})
         default_pm = safe_get(sub, "default_payment_method")
         master_custom_pm_id = _require(safe_get(default_pm, "id"), "Missing master default_payment_method.id on subscription")

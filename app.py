@@ -420,6 +420,12 @@ def create_app() -> Flask:
             # Processing account is associated to the selected price.
             processing_account_id, _processing_secret_key, _processing_publishable_key = get_account_env(alias)
 
+            # If the subscription is created on master but processed on a different account,
+            # we can mark it to skip certain downstream invoice sync behaviors (custom orchestration flag).
+            cfg = load_runtime_config()
+            tag_skip_sync = bool(cfg.get("skip_sync_non_master_invoice", True)) if isinstance(cfg, dict) else True
+            skip_ns_invoice_sync = (processing_account_id != master_account_id) and tag_skip_sync
+
             subscription = client.v1.subscriptions.create(
                 {
                     "customer": stripe_customer_id,
@@ -433,6 +439,7 @@ def create_app() -> Flask:
                         "MASTER_ACCOUNT_ID": master_account_id,
                         "SELECTED_PRICE_ID": price_id,
                         "SELECTED_CURRENCY": price.get("currency"),
+                        **({"SKIP_NS_INVOICE_SYNC": "true"} if skip_ns_invoice_sync else {}),
                     },
                     "expand": ["latest_invoice", "latest_invoice.payment_intent", "pending_setup_intent",
                     "latest_invoice.confirmation_secret"],
@@ -510,6 +517,14 @@ def create_app() -> Flask:
                             pass
             except Exception:
                 latest_invoice_id = None
+
+            # Propagate the same "SKIP_NS_INVOICE_SYNC" marker to the master invoice created by the subscription.
+            # Note: Stripe metadata values are strings.
+            if skip_ns_invoice_sync and latest_invoice_id:
+                try:
+                    client.v1.invoices.update(str(latest_invoice_id), {"metadata": {"SKIP_NS_INVOICE_SYNC": "true"}})
+                except Exception:
+                    traceback.print_exc()
 
             try:
                 psi = getattr(subscription, "pending_setup_intent", None) or (

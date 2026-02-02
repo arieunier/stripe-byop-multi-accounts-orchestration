@@ -8,7 +8,7 @@ Note: runtime configuration and catalog are stored as local JSON files (typicall
 
 ## Global rules
 
-- **All metadata keys are UPPERCASE** (breaking-change dev mode).
+- **Rule**: all metadata keys written by this project are **UPPERCASE** (breaking-change dev mode).
 - Metadata is used to:
   - link objects across accounts (master ↔ processing)
   - make webhooks idempotent / traceable
@@ -39,6 +39,7 @@ Note: runtime configuration and catalog are stored as local JSON files (typicall
 - `MASTER_ACCOUNT_ID`
 - `SELECTED_PRICE_ID`
 - `SELECTED_CURRENCY`
+- `SKIP_NS_INVOICE_SYNC` (written as `"true"` when `processing_account_id != master_account_id`)
 
 ---
 
@@ -97,6 +98,34 @@ Note: runtime configuration and catalog are stored as local JSON files (typicall
 - `MASTER_ACCOUNT_CUSTOMER_ID`
 - `MASTER_ACCOUNT_SUBSCRIPTION_ID`
 - `MASTER_ACCOUNT_ID`
+
+Other propagated fields (not metadata):
+- `number` is set to the **master invoice number** (for cross-account reconciliation)
+
+### Additional processing invoice (Scenario #1)
+
+Scenario #1 can also create a second processing invoice of type **send_invoice** for downstream sync:
+
+**Keys written on that processing invoice**
+- `MASTER_ACCOUNT_INVOICE_ID`
+- `MASTER_ACCOUNT_SUBSCRIPTION_ID`
+- `MASTER_ACCOUNT_ID`
+- `PROCESSING_ACCOUNT_PAYMENT_INTENT_ID`
+- `IS_INITIAL_PAYMENT` (string `"true"`)
+
+## 5b) InvoiceItem / Invoice Line (Processing account) — Taxes payload (Scenario #1)
+
+**Where written**
+- Scenario #1 creates processing `invoice_items` mirroring the master invoice lines.
+
+**Keys written**
+- `TAXES` (JSON string) — array of tax objects:
+  - `amount`
+  - `taxable_amount`
+  - `tax_rate_data`:
+    - `inclusive` (boolean)
+    - `display_name` (string)
+    - `percentage` (number)
 
 ---
 

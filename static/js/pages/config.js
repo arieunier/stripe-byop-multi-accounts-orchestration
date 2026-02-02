@@ -190,6 +190,50 @@ function buildMasterAliasSection(state, onChange) {
   return el("div", { class: "stack" }, [select]);
 }
 
+function toggleField(label, value, onSet, hint) {
+  const checked = Boolean(value);
+  const input = el("input", {
+    type: "checkbox",
+    ...(checked ? { checked: "checked" } : {}),
+    onChange: (e) => onSet(Boolean(e.target.checked)),
+  });
+  const row = el("div", { class: "row" }, [
+    el("div", { style: "display:grid; gap:4px; flex:1; min-width:260px;" }, [
+      el("div", { class: "label", text: label }),
+      hint ? el("div", { class: "hint", text: hint }) : null,
+    ]),
+    input,
+  ]);
+  return row;
+}
+
+function buildOrchestrationOptionsSection(state, onChange) {
+  if (!state.cfg) state.cfg = {};
+  if (state.cfg.skip_sync_non_master_invoice == null) state.cfg.skip_sync_non_master_invoice = true;
+  if (state.cfg.propagate_tax_to_processing == null) state.cfg.propagate_tax_to_processing = true;
+
+  return el("div", { class: "stack" }, [
+    toggleField(
+      "Tag non-master subscriptions/invoices with SKIP_NS_INVOICE_SYNC",
+      state.cfg.skip_sync_non_master_invoice,
+      (v) => {
+        state.cfg.skip_sync_non_master_invoice = v;
+        onChange();
+      },
+      "If enabled and processing != master, the backend writes metadata.SKIP_NS_INVOICE_SYNC=\"true\" on the master Subscription and Invoice."
+    ),
+    toggleField(
+      "Propagate master invoice taxes to processing invoice (send_invoice)",
+      state.cfg.propagate_tax_to_processing,
+      (v) => {
+        state.cfg.propagate_tax_to_processing = v;
+        onChange();
+      },
+      "If enabled, Scenario #1 builds a processing send_invoice invoice mirroring master line taxes (TAXES payload + tax_amounts update)."
+    ),
+  ]);
+}
+
 function buildCatalogSection(state, onChange) {
   const catalog = state.catalog || {};
   const product = catalog.product || { id: "", name: "", description: "" };
@@ -373,6 +417,14 @@ function render(app, state) {
       subtitle: "Pick which configured account is used as the master (source of truth).",
       content: buildMasterAliasSection(state, rerender),
       open: true,
+    })
+  );
+  list.appendChild(
+    accordionSection({
+      title: "Orchestration options",
+      subtitle: "Feature flags controlling orchestration behaviors.",
+      content: buildOrchestrationOptionsSection(state, rerender),
+      open: false,
     })
   );
   list.appendChild(

@@ -203,3 +203,29 @@ def debug_dump(obj: Any, enabled_env: str = "WEBHOOK_DEBUG_DUMP_EVENT") -> None:
         traceback.print_exc()
 
 
+def get_runtime_bool(key: str, default: bool = True) -> bool:
+    """
+    Read a boolean feature flag from runtime-config.json.
+
+    The config UI stores these flags at top-level (e.g. `skip_sync_non_master_invoice`).
+    """
+    try:
+        cfg = load_runtime_config()
+        if not isinstance(cfg, dict):
+            return bool(default)
+        v = cfg.get(key, default)
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return bool(v)
+        s = str(v).strip().lower()
+        if s in ("1", "true", "yes", "y", "on"):
+            return True
+        if s in ("0", "false", "no", "n", "off", ""):
+            return False
+        return bool(default)
+    except Exception:
+        traceback.print_exc()
+        return bool(default)
+
+

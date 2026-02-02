@@ -14,7 +14,7 @@ Each webhook is received **on an account identified by the alias** (derived from
   - **Processing account**: any alias different from the master
 
 - **Metadata**
-  - **Breaking change / Dev mode**: all `metadata` keys are **UPPERCASE** (no fallback).
+  - **Rule**: all metadata keys written by this project are **UPPERCASE**.
 
 - **Stripe timestamps**
   - To prevent Stripe from rejecting timestamps that are **in the future**, timestamps used in `payment_records.*` are normalized:
@@ -67,6 +67,35 @@ Stored in `config/runtime-config.json` (editable live from `GET /config`):
   - Attaches the payment record to the master invoice via `invoices.attach_payment`
   - Updates the master subscription to set `default_payment_method` = the master custom PM
 
+- **Processing (additional invoice for downstream sync / tax breakdown)**:
+  - Builds processing `invoice_items` mirroring **each** `master_invoice.lines.data[]` line item
+    - For each tax entry on each master line:
+      - Retrieves the `tax_rate` on master (`tax_rates.retrieve(tax_rate_id)`)
+      - Builds a structured `taxesData[]` entry:
+        - `amount`
+        - `taxable_amount`
+        - `tax_rate_data`:
+          - `inclusive` (from `tax_behavior`)
+          - `display_name` (`<display_name>-<jurisdiction>`)
+          - `percentage` (`effective_percentage`)
+    - Writes `metadata.TAXES = JSON.stringify(taxesData)` on the created processing invoice item
+  - Creates a **send_invoice** processing invoice (to be used by downstream systems):
+    - `collection_method="send_invoice"`
+    - `days_until_due=1`
+    - `pending_invoice_items_behavior="include"`
+    - `number=<MASTER invoice.number>`
+    - Metadata written:
+      - `MASTER_ACCOUNT_INVOICE_ID`
+      - `MASTER_ACCOUNT_SUBSCRIPTION_ID`
+      - `MASTER_ACCOUNT_ID`
+      - `PROCESSING_ACCOUNT_PAYMENT_INTENT_ID`
+      - `IS_INITIAL_PAYMENT="true"`
+  - For each processing invoice line, reads `metadata.TAXES` and applies it to the line:
+    - `invoices.line_items.update(processing_invoice_id, line_id, { tax_amounts: <taxesData> })`
+  - Finalizes the invoice: `invoices.finalize_invoice(processing_invoice_id)`
+  - Attaches the original processing PaymentIntent for traceability:
+    - `invoices.attach_payment(processing_invoice_id, { payment_intent: <processing PI> })`
+
 ---
 
 ## Scenario 2 — Payment attempt required on master (create+pay a “mirror” invoice on processing)
@@ -91,6 +120,8 @@ Stored in `config/runtime-config.json` (editable live from `GET /config`):
 ### Triggered actions
 
 - **Master**:
+  - If `data.object.parent.subscription_details.metadata.SKIP_NS_INVOICE_SYNC` exists, updates the master invoice:
+    - `invoices.update(MASTER_ACCOUNT_INVOICE_ID, { metadata: { SKIP_NS_INVOICE_SYNC: <value> } })`
   - Retrieves the master subscription `MASTER_ACCOUNT_SUBSCRIPTION_ID` with `expand=["default_payment_method"]`
   - Extracts from the master custom PM:
     - `MASTER_ACCOUNT_CUSTOM_PAYMENT_METHOD = default_payment_method.id`
@@ -122,11 +153,14 @@ Stored in `config/runtime-config.json` (editable live from `GET /config`):
 - **Account**: Processing account (alias ≠ master)
 - **Event**: `invoice.paid`
 
-### Data extracted from the processing invoice (event)
+### Data extracted from the processing invoice (source of truth)
 
-- `PROCESSING_ACCOUNT_PAYMENT_METHOD = data.object.default_payment_method`
-- `PROCESSING_ACCOUNT_PAYMENT_ID = data.object.payment_intent`
-- `PROCESSING_ACCOUNT_PAID_AT = data.object.status_transitions.paid_at`
+- The implementation re-fetches the invoice from the processing account using `data.object.id`:
+  - `processing_invoice = invoices.retrieve(processing_invoice_id, stripe_version="2020-08-27")`
+- `PROCESSING_ACCOUNT_PAYMENT_METHOD = processing_invoice.default_payment_method`
+- `PROCESSING_ACCOUNT_PAYMENT_ID = processing_invoice.payment_intent`
+- `PROCESSING_ACCOUNT_PAID_AT = processing_invoice.status_transitions.paid_at`
+- If `processing_invoice.metadata.IS_INITIAL_PAYMENT == "true"`: **skip** (already handled in Scenario 1)
 - Metadata (on the processing invoice):
   - `MASTER_ACCOUNT_CUSTOMER_ID`
   - `MASTER_ACCOUNT_ID`

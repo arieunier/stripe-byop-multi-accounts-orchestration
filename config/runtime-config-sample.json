@@ -1,5 +1,7 @@
 {
   "master_account_alias": "EU",
+  "skip_sync_non_master_invoice": true,
+  "propagate_tax_to_processing": true,
   "accounts": {
     "EU": {
       "account_id": "acct_1xxxxxxxx",

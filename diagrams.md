@@ -44,7 +44,7 @@ flowchart LR
   subgraph PROC["Stripe Processing account(s)"]
     P_PI[PaymentIntent]
     P_II[InvoiceItem]
-    P_INV["Invoice (mirror)"]
+    P_INV["Invoice (mirror / send_invoice)"]
     P_RF[Refund]
     P_DP[Dispute]
   end
@@ -73,6 +73,7 @@ flowchart LR
   note1[["Metadata (UPPERCASE) links master<->processing objects"]] --- M_INV
   note1 --- P_INV
   note1 --- P_PI
+  note3[["Flags/payloads: SKIP_NS_INVOICE_SYNC / IS_INITIAL_PAYMENT; TAXES JSON payload on invoice items"]] --- P_INV
   note2[["No DB for webhook monitoring; refresh clears UI history"]] --- FE
 ```
 
@@ -117,9 +118,12 @@ sequenceDiagram
 
     Note over FE,APP: Create subscription (master, automatic tax enabled)
     FE->>APP: POST /api/subscriptions (stripe_customer_id, price_id)
-    APP->>M: subscriptions.create(items:[{price,qty}], payment_behavior=default_incomplete, automatic_tax.enabled=true, expand latest_invoice...)
+    APP->>M: subscriptions.create(..., metadata includes SKIP_NS_INVOICE_SYNC when processing != master)
     M-->>APP: Subscription(sub_...) + latest_invoice(in_...) + payment_intent(pi_...) when available
     APP-->>FE: sub_id + invoice_id + hosted_invoice_url + totals (incl/excl tax) + client_secret when available
+    alt processing != master
+      APP->>M: invoices.update(latest_invoice_id, metadata.SKIP_NS_INVOICE_SYNC="true")
+    end
 
     alt processing == master
       Note over FE,M: Pay on master using Stripe.js Payment Element
@@ -151,10 +155,17 @@ sequenceDiagram
     APP->>M: payment_records.report_payment(outcome=guaranteed, processor_details.custom.payment_reference=processing PI)
     APP->>M: invoices.attach_payment(master_invoice_id, payment_record)
     APP->>M: subscriptions.update(default_payment_method = master CPM)
+    Note over APP,P: Create processing send_invoice invoice for downstream sync (tax breakdown)
+    APP->>P: invoice_items.create(..., metadata.TAXES=JSON)
+    APP->>P: invoices.create(collection_method=send_invoice, number=master invoice.number, metadata.IS_INITIAL_PAYMENT="true")
+    APP->>P: invoices.line_items.update(..., tax_amounts=taxesData)
+    APP->>P: invoices.finalize_invoice(processing_invoice_id)
+    APP->>P: invoices.attach_payment(processing_invoice_id, payment_intent=processing PI)
 
     %% Scenario 2
     Note over M,APP: Scenario 2 (master) — invoice.payment_attempt_required
     M-->>APP: Webhook invoice.payment_attempt_required (master invoice)
+    APP->>M: invoices.update(master_invoice_id, metadata.SKIP_NS_INVOICE_SYNC=<value>)  %% if present in subscription_details.metadata
     APP->>M: subscriptions.retrieve(expand default_payment_method)
     APP->>P: invoices.search/list by metadata MASTER_ACCOUNT_INVOICE_ID
     alt mirror invoice not found
@@ -162,17 +173,21 @@ sequenceDiagram
       APP->>P: invoices.create(collection_method=charge_automatically, default_payment_method=processing PM, metadata MASTER_* links)
       APP->>P: invoices.pay(off_session=true)
     else mirror invoice exists
-      Note over APP: Do do not anything
+      Note over APP: No-op
     end
 
     %% Scenario 3
     Note over P,APP: Scenario 3 (processing) — invoice.paid
     P-->>APP: Webhook invoice.paid (may omit fields)
     APP->>P: invoices.retrieve(processing_invoice_id)  %% source of truth
+    alt processing_invoice.metadata.IS_INITIAL_PAYMENT == "true"
+      Note over APP: Skip (initial payment already reported in Scenario 1)
+    else
     APP->>M: subscriptions.retrieve(expand default_payment_method) -> master CPM id
     APP->>M: payment_records.report_payment(outcome=guaranteed, payment_method_details.payment_method=master CPM)
     APP->>M: invoices.attach_payment(master_invoice_id, payment_record)
     APP->>M: invoices.update(metadata.MASTER_ACCOUNT_PAYMENT_RECORD_ID=payment_record_id)
+    end
 
     %% Scenario 4
     Note over P,APP: Scenario 4 (processing) — invoice.payment_failed
